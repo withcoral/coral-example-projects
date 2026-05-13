@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
 
-from anthropic import AsyncAnthropic
+from pydantic_ai import Agent, ModelSettings
+from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+from pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.usage import UsageLimits
 
-from sre_agent.coral_mcp import CoralMcpClient
+from sre_agent.coral_mcp import CoralMcpClient, load_coral_env
 
-SYSTEM_PROMPT = """You are a pedantic AI SRE assistant operating inside Slack.
+DEFAULT_MODEL = "claude-sonnet-4-6"
+MAX_OUTPUT_TOKENS = 1800
+
+SYSTEM_PROMPT = """You are a Pydantic AI SRE assistant operating inside Slack.
 
 Rules:
 - Treat Datadog, Slack, GitHub, and Sentry as evidence sources. Use Coral MCP tools before making factual claims about incidents, alerts, deployments, errors, owners, or recent status.
@@ -20,86 +25,79 @@ Rules:
 """
 
 
-def _block_to_dict(block: Any) -> dict[str, Any]:
-    if hasattr(block, "model_dump"):
-        return block.model_dump(mode="json", exclude_none=True)
-    if hasattr(block, "dict"):
-        return block.dict(exclude_none=True)
-    return dict(block)
+def _pydantic_model_name(model: str) -> str:
+    if ":" in model:
+        return model
+    return f"anthropic:{model}"
 
 
-def _extract_text(content: list[Any]) -> str:
-    parts: list[str] = []
-    for block in content:
-        if getattr(block, "type", None) == "text":
-            parts.append(getattr(block, "text", ""))
-    return "\n".join(part for part in parts if part).strip()
+def _prompt_with_context(user_text: str, slack_context: dict[str, object] | None) -> str:
+    if not slack_context:
+        return user_text
+    return (
+        f"{user_text}\n\nSlack event context:\n"
+        f"{json.dumps(slack_context, indent=2, sort_keys=True)}"
+    )
 
 
-class PedanticSreAgent:
+def _exception_chain_text(exc: BaseException) -> str:
+    messages: list[str] = []
+    current: BaseException | None = exc
+    while current is not None:
+        message = str(current).strip()
+        if message and message not in messages:
+            messages.append(message)
+        current = current.__cause__ or current.__context__
+    return " | ".join(messages)
+
+
+class PydanticSreAgent:
     def __init__(
         self,
         *,
-        anthropic_client: AsyncAnthropic | None = None,
         coral_client: CoralMcpClient | None = None,
         model: str | None = None,
         max_tool_rounds: int = 6,
     ):
-        self.anthropic = anthropic_client or AsyncAnthropic()
         self.coral = coral_client or CoralMcpClient()
-        self.model = model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+        self.model = model or os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL)
         self.max_tool_rounds = max_tool_rounds
 
-    async def answer(self, user_text: str, *, slack_context: dict[str, Any] | None = None) -> str:
-        tools = [tool.to_anthropic_tool() for tool in await self.coral.list_tools()]
-        context_text = ""
-        if slack_context:
-            context_text = "\n\nSlack event context:\n" + json.dumps(
-                slack_context, indent=2, sort_keys=True
-            )
-
-        messages: list[dict[str, Any]] = [
-            {
-                "role": "user",
-                "content": f"{user_text}{context_text}",
-            }
-        ]
-
-        for _ in range(self.max_tool_rounds):
-            response = await self.anthropic.messages.create(
-                model=self.model,
-                max_tokens=1800,
-                system=SYSTEM_PROMPT,
-                messages=messages,
-                tools=tools,
-            )
-
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": [_block_to_dict(block) for block in response.content],
-                }
-            )
-
-            tool_uses = [block for block in response.content if getattr(block, "type", None) == "tool_use"]
-            if not tool_uses:
-                return _extract_text(response.content) or "(No text response returned.)"
-
-            tool_results: list[dict[str, Any]] = []
-            for tool_use in tool_uses:
-                result_text = await self.coral.call_tool(tool_use.name, tool_use.input)
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use.id,
-                        "content": result_text[:20000],
-                    }
-                )
-
-            messages.append({"role": "user", "content": tool_results})
-
-        return (
-            "I stopped after the configured tool-call budget. The available evidence was not "
-            "enough for a final answer without risking overreach."
+    def _build_agent(self) -> Agent:
+        coral_server = MCPServerStdio(
+            self.coral.coral_bin,
+            args=self.coral.mcp_args,
+            env=load_coral_env(),
+            timeout=10,
+            include_instructions=True,
+        )
+        return Agent(
+            _pydantic_model_name(self.model),
+            instructions=SYSTEM_PROMPT,
+            toolsets=[coral_server],
+            model_settings=ModelSettings(max_tokens=MAX_OUTPUT_TOKENS, temperature=0.0),
         )
 
+    async def answer(
+        self, user_text: str, *, slack_context: dict[str, object] | None = None
+    ) -> str:
+        agent = self._build_agent()
+        prompt = _prompt_with_context(user_text, slack_context)
+        try:
+            async with agent:
+                result = await agent.run(
+                    prompt,
+                    usage_limits=UsageLimits(request_limit=self.max_tool_rounds + 1),
+                )
+        except UsageLimitExceeded:
+            return (
+                "I stopped after the configured tool-call budget. The available evidence was not "
+                "enough for a final answer without risking overreach."
+            )
+        except UnexpectedModelBehavior as exc:
+            return (
+                "I hit a Coral MCP tool error before I could finish the investigation: "
+                f"{_exception_chain_text(exc)}"
+            )
+
+        return str(result.output).strip() or "(No text response returned.)"

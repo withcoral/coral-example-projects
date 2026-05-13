@@ -3,11 +3,11 @@
 This example is a functioning Slackbot for SRE investigations. It uses:
 
 - Slack Bolt for Python in Socket Mode
-- Anthropic Messages API tool use
+- Pydantic AI with the Anthropic model provider
 - Coral MCP over stdio
 - Coral sources for Datadog, Slack, GitHub, and Sentry
 
-The bot is intentionally read-only. It answers Slack mentions and DMs by querying Coral, then returns a pedantic incident-style answer with evidence and uncertainty.
+The bot is intentionally read-only. It answers Slack mentions and DMs by querying Coral, then returns an incident-style answer with evidence and uncertainty.
 
 ## Quickstart
 

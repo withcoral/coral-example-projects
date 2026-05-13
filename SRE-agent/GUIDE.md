@@ -11,7 +11,7 @@ mkdir SRE-agent
 cd SRE-agent
 ```
 
-Add a Python package with Slack Bolt, Anthropic, and the MCP Python SDK. This repo already includes that package in `src/sre_agent`.
+Add a Python package with Slack Bolt, Pydantic AI, and the MCP Python SDK. This repo already includes that package in `src/sre_agent`.
 
 ## 2. Install Coral and Python Dependencies
 
@@ -87,7 +87,7 @@ In Claude Code, run `/mcp` to confirm the `coral` server is connected. Depending
 Using Coral, list the Datadog, Slack, GitHub, and Sentry tables available to the SRE agent.
 ```
 
-## 5. Run the Pedantic AI Agent Locally
+## 5. Run the Pydantic SRE Agent Locally
 
 The local CLI uses the same agent loop as the Slackbot:
 
@@ -99,8 +99,8 @@ The local CLI uses the same agent loop as the Slackbot:
 The agent:
 
 - Lists Coral MCP tools.
-- Sends those tools to Claude through the Anthropic Messages API.
-- Executes Claude's tool requests against Coral MCP.
+- Registers Coral MCP as a Pydantic AI toolset.
+- Lets Pydantic AI handle model/tool orchestration against Claude.
 - Returns a conservative answer with evidence, hypotheses, confidence, and next checks.
 
 ## 6. Run the Slackbot
@@ -149,10 +149,10 @@ Use prompts that show multi-source SRE investigation:
 Open:
 
 ```bash
-jupyter lab notebooks/pedantic_sre_agent.ipynb
+jupyter lab notebooks/pydantic_sre_agent.ipynb
 ```
 
-The notebook loads `.env`, checks Coral MCP, and runs the same pedantic agent against a prompt. Use it for guided customer demos when you want to show each step.
+The notebook loads `.env`, checks Coral MCP, and runs the same Pydantic SRE agent against a prompt. Use it for guided customer demos when you want to show each step.
 
 ## 9. Safety Notes
 
@@ -164,6 +164,7 @@ The notebook loads `.env`, checks Coral MCP, and runs the same pedantic agent ag
 ## References
 
 - Anthropic Claude Code MCP: https://docs.anthropic.com/en/docs/claude-code/mcp
-- Anthropic tool use: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/implement-tool-use
+- Pydantic AI MCP client: https://pydantic.dev/docs/ai/mcp/client/
+- Pydantic AI Anthropic provider: https://pydantic.dev/docs/ai/models/anthropic/
 - Slack Bolt Python Socket Mode: https://docs.slack.dev/tools/bolt-python/concepts/socket-mode
 - Slack `app_mention` event: https://docs.slack.dev/reference/events/app_mention/

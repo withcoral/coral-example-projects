@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from sre_agent.agent import PedanticSreAgent
+from sre_agent.agent import PydanticSreAgent
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ def build_app() -> App:
         say(text="Investigating with Coral. I will be conservative about claims.", thread_ts=thread_ts)
         try:
             answer = asyncio.run(
-                PedanticSreAgent().answer(prompt, slack_context=_event_context(event))
+                PydanticSreAgent().answer(prompt, slack_context=_event_context(event))
             )
         except Exception:
             logger.exception("SRE agent failed")
@@ -55,7 +55,7 @@ def build_app() -> App:
         prompt = _clean_slack_text(message.get("text", ""))
         try:
             answer = asyncio.run(
-                PedanticSreAgent().answer(prompt, slack_context=_event_context(message))
+                PydanticSreAgent().answer(prompt, slack_context=_event_context(message))
             )
         except Exception:
             logger.exception("SRE agent failed")
@@ -73,4 +73,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

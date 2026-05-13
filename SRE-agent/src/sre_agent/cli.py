@@ -6,12 +6,12 @@ import os
 
 from dotenv import load_dotenv
 
-from sre_agent.agent import PedanticSreAgent
+from sre_agent.agent import PydanticSreAgent
 from sre_agent.coral_mcp import CoralMcpClient
 
 
 async def _ask(prompt: str) -> str:
-    agent = PedanticSreAgent()
+    agent = PydanticSreAgent()
     return await agent.answer(prompt)
 
 
@@ -41,4 +41,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
