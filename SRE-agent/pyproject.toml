@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "coral-sre-agent"
+version = "0.1.0"
+description = "AI SRE Slackbot example using Claude and Coral MCP"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "anthropic>=0.60.0",
+  "mcp>=1.9.0",
+  "python-dotenv>=1.0.1",
+  "slack-bolt>=1.21.0",
+  "slack-sdk>=3.33.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.6.0",
+]
+notebook = [
+  "ipykernel>=6.29.0",
+  "jupyterlab>=4.2.0",
+]
+
+[project.scripts]
+coral-sre-agent = "sre_agent.cli:main"
+coral-sre-slackbot = "sre_agent.slackbot:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sre_agent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
