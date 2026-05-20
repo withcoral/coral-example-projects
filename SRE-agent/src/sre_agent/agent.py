@@ -22,6 +22,14 @@ Rules:
 - Do not claim to have paged, deployed, reverted, muted, acknowledged, resolved, or changed anything. This demo agent is read-only.
 - When asked for an incident assessment, return: summary, evidence, likely causes, confidence, and next checks.
 - Mention the source of important evidence, including table names and identifiers where useful.
+
+Response style — write for Slack, not a doc:
+- Keep it short. Aim for under 150 words unless the user explicitly asks for depth.
+- Lead with the answer. No "Let me check…" preamble; no recap of the question.
+- Use Slack mrkdwn, not standard Markdown: *bold* (single asterisks), _italic_, `code`, ```code blocks```, > quotes, `-` bullets. Do NOT use `#` / `##` headers — Slack renders them literally. Use *bold labels* for section breaks instead.
+- Flat bullet lists only; Slack mangles nested lists.
+- Links: `<https://example.com|link text>`.
+- Use status emojis sparingly to draw the eye: :red_circle: critical, :large_yellow_circle: warning, :white_check_mark: ok.
 """
 
 
@@ -57,13 +65,13 @@ class PydanticSreAgent:
         *,
         coral_client: CoralMcpClient | None = None,
         model: str | None = None,
-        max_tool_rounds: int = 6,
+        max_tool_rounds: int = 30,
     ):
         self.coral = coral_client or CoralMcpClient()
         self.model = model or os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL)
         self.max_tool_rounds = max_tool_rounds
 
-    def _build_agent(self) -> Agent:
+    def _build_agent(self, *, event_stream_handler=None) -> Agent:
         coral_server = MCPServerStdio(
             self.coral.coral_bin,
             args=self.coral.mcp_args,
@@ -76,12 +84,17 @@ class PydanticSreAgent:
             instructions=SYSTEM_PROMPT,
             toolsets=[coral_server],
             model_settings=ModelSettings(max_tokens=MAX_OUTPUT_TOKENS, temperature=0.0),
+            event_stream_handler=event_stream_handler,
         )
 
     async def answer(
-        self, user_text: str, *, slack_context: dict[str, object] | None = None
+        self,
+        user_text: str,
+        *,
+        slack_context: dict[str, object] | None = None,
+        event_stream_handler=None,
     ) -> str:
-        agent = self._build_agent()
+        agent = self._build_agent(event_stream_handler=event_stream_handler)
         prompt = _prompt_with_context(user_text, slack_context)
         try:
             async with agent:
