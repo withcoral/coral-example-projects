@@ -11,4 +11,5 @@ build/
 *.egg-info/
 *.coral.json
 .mcp.local.json
+.ipynb_checkpoints/
 
