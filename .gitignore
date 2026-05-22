@@ -12,4 +12,5 @@ build/
 *.coral.json
 .mcp.local.json
 .ipynb_checkpoints/
+.claude/
 

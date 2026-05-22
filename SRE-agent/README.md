@@ -9,6 +9,10 @@ This example is a functioning Slackbot for SRE investigations. It uses:
 
 The bot is intentionally read-only. It answers Slack mentions and DMs by querying Coral, then returns an incident-style answer with evidence and uncertainty.
 
+## Project tracking
+
+Roadmap and open work live in the Linear project: [Coral Example Project: SRE Agent](https://linear.app/withcoral/project/coral-example-project-sre-agent-56bb8b242282/overview).
+
 ## Quickstart
 
 ```bash
