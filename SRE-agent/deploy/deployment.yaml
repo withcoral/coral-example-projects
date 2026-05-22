@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-agent
+  namespace: coral-demos
+  labels:
+    app.kubernetes.io/name: sre-agent
+    app.kubernetes.io/part-of: coral-demos
+spec:
+  # Exactly one replica is required. The bot uses Slack Socket Mode, which opens
+  # a single outbound WebSocket to Slack. Each replica would open its own
+  # connection and Slack fans every event out to all connections -- so multiple
+  # replicas would double-process every message. Do NOT scale this up.
+  replicas: 1
+  # With one replica, recreate on update rather than running two pods briefly.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sre-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sre-agent
+        app.kubernetes.io/part-of: coral-demos
+    spec:
+      containers:
+        - name: sre-agent
+          # Placeholder -- the image is built by a separate ticket's Dockerfile
+          # and pushed to Amazon ECR. Replace before deploying, e.g.:
+          # 123456789012.dkr.ecr.us-east-1.amazonaws.com/sre-agent:<git-sha>
+          image: <ECR_REPO>:<TAG>
+          imagePullPolicy: IfNotPresent
+          # All runtime config/secrets come from the sre-agent-secrets Secret.
+          envFrom:
+            - secretRef:
+                name: sre-agent-secrets
+          # Socket Mode means no inbound traffic, so no Service is needed.
+          # We still expose 8080 so the liveness probe can reach /healthz.
+          ports:
+            - name: health
+              containerPort: 8080
+          # Lightweight Python bot: modest requests, headroom in the limits.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # Liveness probe: restart the pod if the health endpoint stops
+          # responding (e.g. the Socket Mode loop has wedged).
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # No readiness probe: the bot serves no inbound traffic, so there is
+          # no Service routing decision that "ready" would gate. Liveness alone
+          # is sufficient.
