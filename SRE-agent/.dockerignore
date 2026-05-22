@@ -1,0 +1,13 @@
+.venv
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+.git
+.gitignore
+.pytest_cache
+.ruff_cache
+notebooks/.ipynb_checkpoints
+**/.ipynb_checkpoints
+.DS_Store
