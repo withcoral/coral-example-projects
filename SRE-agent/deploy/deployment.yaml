@@ -26,10 +26,10 @@ spec:
     spec:
       containers:
         - name: sre-agent
-          # Placeholder -- the image is built by a separate ticket's Dockerfile
-          # and pushed to Amazon ECR. Replace before deploying, e.g.:
-          # 123456789012.dkr.ecr.us-east-1.amazonaws.com/sre-agent:<git-sha>
-          image: <ECR_REPO>:<TAG>
+          # Pinned by digest for an exact, cache-proof rollout. This digest is
+          # the linux/amd64 build of git commit 1caeb76 — the image MUST be
+          # built `--platform linux/amd64` to match the cluster nodes.
+          image: 092126007228.dkr.ecr.eu-west-1.amazonaws.com/coral-sre-agent@sha256:abc0c2aa158d42e284fb20b90093aff658bc9f41203a25b1f1518f5846e76539
           imagePullPolicy: IfNotPresent
           # All runtime config/secrets come from the sre-agent-secrets Secret.
           envFrom:
