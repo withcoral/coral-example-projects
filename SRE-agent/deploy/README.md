@@ -37,7 +37,7 @@ kubectl create secret generic sre-agent-secrets \
   --from-literal=SLACK_BOT_TOKEN=... \
   --from-literal=SLACK_APP_TOKEN=... \
   --from-literal=DD_API_KEY=... \
-  --from-literal=DD_APP_KEY=... \
+  --from-literal=DD_APPLICATION_KEY=... \
   --from-literal=DD_SITE=datadoghq.com \
   --from-literal=GITHUB_TOKEN=... \
   --from-literal=SENTRY_TOKEN=... \

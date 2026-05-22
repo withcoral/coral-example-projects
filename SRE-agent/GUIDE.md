@@ -71,7 +71,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 SLACK_BOT_TOKEN=xoxb-...          # Bot User OAuth Token
 SLACK_APP_TOKEN=xapp-...          # App-Level Token (connections:write)
 DD_API_KEY=...                    # Datadog API key
-DD_APP_KEY=...                    # Datadog Application key (Coral requires BOTH)
+DD_APPLICATION_KEY=...            # Datadog Application key (Coral needs BOTH)
 DD_SITE=datadoghq.com
 GITHUB_TOKEN=...
 SENTRY_TOKEN=...
@@ -90,8 +90,7 @@ handler — leave them blank and the bot still runs (mentions + DMs only).
 for an interactive walkthrough.
 
 > **Gotcha:** the Datadog source needs **both** `DD_API_KEY` *and*
-> `DD_APP_KEY` (Coral surfaces it as `DD_APPLICATION_KEY`). With only the API
-> key, `coral source add datadog` fails.
+> `DD_APPLICATION_KEY`. With only the API key, `coral source add datadog` fails.
 
 ## 5. Run locally
 
@@ -170,7 +169,7 @@ Then DM the bot or `@`-mention it — a reply confirms the full path
 | Bot never receives messages | Wrong token (`xoxp-` user token instead of `xoxb-` bot token), or missing event subscriptions / scopes. Reinstall the app. |
 | "Sending messages to this app has been turned off" | App Home → enable the Messages Tab + allow user messages. |
 | Pod `CrashLoopBackOff`, `exec format error` | Image arch mismatch — rebuild `--platform linux/amd64`. |
-| `coral source add datadog` fails | `DD_APP_KEY` (Datadog Application key) is missing. |
+| `coral source add datadog` fails | `DD_APPLICATION_KEY` (Datadog Application key) is missing. |
 | `missing_scope` on `slack.channels` | Bot lacks `channels:read` / `channels:history` — add scopes and reinstall. |
 
 ## Safety notes
