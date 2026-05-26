@@ -51,6 +51,13 @@ Data sources for this service:
 - Sentry: org slug coral-sm, project slug python-fastapi. sentry.issues holds aggregated exceptions (filter by project for recent ones, with counts, first/last seen, short IDs). sentry.events / sentry.project_events have full stack traces.
 - Source code: GitHub repository withcoral/coral-example-projects. The hello-service app source lives at SRE-agent/demo-app/main.py. Coral's GitHub source exposes github.commits and github.contents (or equivalent file-content tables) for this repo.
 
+URL templates for the Sources section (and inline links):
+- Datadog monitor: https://app.datadoghq.eu/monitors/{MONITOR_ID}
+- Sentry issue:    https://coral-sm.sentry.io/issues/{ISSUE_ID}/  (use the numeric id, not the short id; the short id also works via redirect)
+- GitHub file:     https://github.com/withcoral/coral-example-projects/blob/main/{PATH}  (e.g. SRE-agent/demo-app/main.py)
+- GitHub commit:   https://github.com/withcoral/coral-example-projects/commit/{SHA}
+Render every URL as Slack mrkdwn: <URL|short label>. Example: <https://app.datadoghq.eu/monitors/108023099|Datadog monitor>.
+
 Investigation guidance:
 - You have a generous tool-call budget. Be thorough: query each data source as many times as you need to get strong evidence. Cross-reference findings across Sentry, GitHub, and Datadog.
 - Sentry is usually the highest-signal source for code-level errors -- start there to find the dominant issue, exception type, and file:line.
@@ -257,44 +264,30 @@ def build_app() -> App:
     alerts_channel_id = os.getenv("ALERTS_CHANNEL_ID")
     datadog_app_id = os.getenv("DATADOG_SLACK_APP_ID")
     handled_alert_ts: set[str] = set()
+    # Threads the bot has auto-investigated. Human follow-ups in these threads
+    # get an automatic reply -- no need to @-mention. In-memory only; resets
+    # on pod restart, after which users fall back to @-mentioning the bot.
+    engaged_threads: set[str] = set()
 
-    @app.event("message")
-    def handle_alert_message(event, say, logger):  # type: ignore[no-untyped-def]
-        # No-op unless #alerts is configured, so the bot runs fine without it.
-        if not alerts_channel_id or not datadog_app_id:
-            return
-        if event.get("subtype") or event.get("channel") != alerts_channel_id:
-            return
-        if datadog_app_id not in (event.get("app_id"), event.get("bot_id")):
-            return
-        ts = event.get("ts")
-        if not ts or ts in handled_alert_ts:
-            return
-        handled_alert_ts.add(ts)
-
+    def _run_alert_investigation(event, say, logger):
+        ts = event["ts"]
         alert_text = _extract_alert_text(event)
-        # Context-aware ack so the channel sees the bot understood the alert
-        # before the full investigation lands. Falls back to a static line if
-        # the quick model call fails.
         try:
             ack = asyncio.run(quick_ack(alert_text))
         except Exception:
             logger.exception("quick_ack failed")
             ack = ":mag: Investigating this alert with Coral..."
         say(text=ack, thread_ts=ts)
-        prompt_parts = [
+
+        prompt = "\n\n".join([
             "A Datadog alert just fired. Produce the full structured incident assessment "
             "defined in your instructions (Summary / Evidence / Likely cause / Blast radius / "
             "What changed / Mitigation). Ground the Likely cause section in the actual source "
             "code -- if a Sentry stack trace points at a file:line, look that file up in GitHub "
             "via Coral and quote the offending line.",
-        ]
-        prompt_parts.append(
-            "Deployment-specific context (service-to-source mapping):\n"
-            + INVESTIGATION_CONTEXT
-        )
-        prompt_parts.append(f"Alert:\n{alert_text or '(empty alert body)'}")
-        prompt = "\n\n".join(prompt_parts)
+            "Deployment-specific context (service-to-source mapping):\n" + INVESTIGATION_CONTEXT,
+            f"Alert:\n{alert_text or '(empty alert body)'}",
+        ])
 
         try:
             answer = _run_with_timeout(
@@ -311,6 +304,64 @@ def build_app() -> App:
             logger.exception("SRE agent failed on Datadog alert")
             answer = "I hit an error while investigating this alert. Check the bot logs for details."
         say(text=answer, thread_ts=ts)
+
+    def _run_threaded_followup(event, say, client, logger):
+        thread_ts = event["thread_ts"]
+        prompt = _clean_slack_text(event.get("text", ""))
+        history = _fetch_thread_history(
+            client,
+            event["channel"],
+            thread_ts,
+            bot_user_id,
+            exclude_ts=event.get("ts"),
+        )
+        logger.info("auto follow-up: %d prior turns in thread %s", len(history), thread_ts)
+        say(text=":speech_balloon: One sec, checking...", thread_ts=thread_ts)
+        try:
+            answer = _run_with_timeout(
+                PydanticSreAgent().answer(
+                    prompt,
+                    slack_context=_event_context(event),
+                    message_history=history or None,
+                )
+            )
+        except asyncio.TimeoutError:
+            logger.warning("auto follow-up timed out after %ds", AGENT_RUN_TIMEOUT_SECONDS)
+            answer = (
+                f":hourglass_flowing_sand: That took longer than {AGENT_RUN_TIMEOUT_SECONDS}s. "
+                f"Narrow it down and I'll try again."
+            )
+        except Exception:
+            logger.exception("auto follow-up failed")
+            answer = "I hit an error on that follow-up. Check the bot logs."
+        say(text=answer, thread_ts=thread_ts)
+
+    @app.event("message")
+    def handle_alert_message(event, say, client, logger):  # type: ignore[no-untyped-def]
+        # No-op unless #alerts is configured, so the bot runs fine without it.
+        if not alerts_channel_id or not datadog_app_id:
+            return
+        if event.get("subtype") or event.get("channel") != alerts_channel_id:
+            return
+
+        is_datadog = datadog_app_id in (event.get("app_id"), event.get("bot_id"))
+        if is_datadog:
+            ts = event.get("ts")
+            if not ts or ts in handled_alert_ts:
+                return
+            handled_alert_ts.add(ts)
+            engaged_threads.add(ts)
+            _run_alert_investigation(event, say, logger)
+            return
+
+        # Human follow-up in a thread the bot already auto-investigated.
+        thread_ts = event.get("thread_ts")
+        if not thread_ts or thread_ts not in engaged_threads:
+            return
+        # Skip any bot-authored message (including our own previous replies).
+        if event.get("bot_id") or (bot_user_id and event.get("user") == bot_user_id):
+            return
+        _run_threaded_followup(event, say, client, logger)
 
     return app
 

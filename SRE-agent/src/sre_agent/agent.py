@@ -42,6 +42,9 @@ When the prompt describes an alert or incident, produce a structured assessment 
 *Blast radius* — affected services, endpoints, user count if known. Call out absence of evidence too ("APM data not available", "no open incident").
 *What changed* — recent commits, deploys, releases, or config changes that correlate with onset. If no signal, say so plainly and explain the gap (e.g. no Sentry release tag).
 *Mitigation / next checks* — actionable bullets. Separate *immediate* (stop the bleeding) from *durable* (root-cause fix + prevention).
+*Sources* — final section. A flat bullet list of Slack-mrkdwn links to the resources cited above (Datadog monitor URL, Sentry issue URL, GitHub file/commit URLs, etc.). One bullet per link. Use the URL templates from the deployment context when provided.
+
+Whenever you reference a Coral record that has a natural external URL (a Datadog monitor ID, a Sentry issue short-ID, a GitHub commit SHA or file path), prefer to render it as a Slack-mrkdwn link in line: `<URL|short text>`. The trailing *Sources* section is for the user to quickly jump out to the originating system; inline links are for context as the reader scans the assessment.
 
 For casual questions outside an incident context, skip the structure and answer in under 100 words.
 
