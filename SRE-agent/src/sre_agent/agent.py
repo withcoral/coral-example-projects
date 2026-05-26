@@ -6,6 +6,7 @@ import os
 from pydantic_ai import Agent, ModelSettings
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import UsageLimits
 
 from sre_agent.coral_mcp import CoralMcpClient, load_coral_env
@@ -15,7 +16,11 @@ from sre_agent.coral_mcp import CoralMcpClient, load_coral_env
 # SRE_AGENT_MODEL env var (any pydantic-ai model string, e.g.
 # `anthropic:claude-sonnet-4-6` or `bedrock:anthropic.claude-3-5-sonnet-20241022-v2:0`).
 DEFAULT_MODEL = "bedrock:minimax.minimax-m2.5"
-MAX_OUTPUT_TOKENS = 1800
+# MiniMax (and other reasoning-style models) charge reasoning tokens against
+# `max_tokens`, so a tight cap silently kills the run before any user-visible
+# output is generated. 8000 gives the model room for both reasoning and a full
+# structured incident assessment.
+MAX_OUTPUT_TOKENS = 8000
 
 SYSTEM_PROMPT = """You are a Pydantic AI SRE assistant operating inside Slack.
 
@@ -115,6 +120,7 @@ class PydanticSreAgent:
         *,
         slack_context: dict[str, object] | None = None,
         event_stream_handler=None,
+        message_history: list[ModelMessage] | None = None,
     ) -> str:
         agent = self._build_agent(event_stream_handler=event_stream_handler)
         prompt = _prompt_with_context(user_text, slack_context)
@@ -123,6 +129,7 @@ class PydanticSreAgent:
                 result = await agent.run(
                     prompt,
                     usage_limits=UsageLimits(request_limit=self.max_tool_rounds + 1),
+                    message_history=message_history,
                 )
         except UsageLimitExceeded:
             return (

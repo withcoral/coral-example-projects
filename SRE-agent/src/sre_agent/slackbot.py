@@ -8,7 +8,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 from dotenv import load_dotenv
-from pydantic_ai.messages import FunctionToolCallEvent
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
 from slack_bolt import App, Assistant
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
@@ -84,11 +91,74 @@ def _event_context(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Short bot acks we strip from message_history -- they aren't substantive
+# turns and including them as ModelResponse messages just confuses the agent.
+_ACK_SUBSTRINGS = (
+    "Investigating with Coral",
+    "Investigating this alert with Coral",
+)
+
+
+def _is_ack_message(text: str) -> bool:
+    return any(s in text for s in _ACK_SUBSTRINGS)
+
+
+def _fetch_thread_history(
+    client: Any,
+    channel: str,
+    thread_ts: str,
+    bot_user_id: str | None,
+    *,
+    exclude_ts: str | None = None,
+    limit: int = 50,
+) -> list[ModelMessage]:
+    """Read a Slack thread and convert it to pydantic-ai message history.
+
+    Bot-authored messages become ModelResponse turns; everything else (humans,
+    the original Datadog alert) becomes a ModelRequest turn so the agent sees
+    the same conversation the user does. The exclude_ts arg drops the message
+    we're currently responding to -- that one is passed in as the new prompt.
+    """
+    try:
+        resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=limit)
+    except Exception:
+        logger.exception("conversations.replies failed for channel=%s ts=%s", channel, thread_ts)
+        return []
+
+    history: list[ModelMessage] = []
+    for msg in resp.get("messages") or []:
+        if exclude_ts and msg.get("ts") == exclude_ts:
+            continue
+        text = _clean_slack_text(msg.get("text", "")) or _extract_alert_text(msg)
+        if not text:
+            continue
+        if _is_ack_message(text):
+            continue
+        is_bot_turn = bool(msg.get("bot_id")) or (
+            bot_user_id is not None and msg.get("user") == bot_user_id
+        )
+        if is_bot_turn:
+            history.append(ModelResponse(parts=[TextPart(content=text)]))
+        else:
+            history.append(ModelRequest(parts=[UserPromptPart(content=text)]))
+    return history
+
+
 def build_app() -> App:
     load_dotenv()
     token = os.environ["SLACK_BOT_TOKEN"]
     app = App(token=token)
     assistant = Assistant()
+
+    # Cache the bot's own user_id once at startup so the thread-history helper
+    # can identify which messages came from us. auth.test is cheap and only
+    # runs once per process.
+    try:
+        bot_user_id: str | None = app.client.auth_test()["user_id"]
+        logger.info("bot user_id resolved: %s", bot_user_id)
+    except Exception:
+        bot_user_id = None
+        logger.exception("auth.test failed; thread history will treat bot replies as user turns")
 
     @assistant.thread_started
     def thread_started(say, set_suggested_prompts, logger):  # type: ignore[no-untyped-def]
@@ -125,13 +195,36 @@ def build_app() -> App:
     app.use(assistant)
 
     @app.event("app_mention")
-    def handle_app_mention(event, say, logger):  # type: ignore[no-untyped-def]
+    def handle_app_mention(event, say, client, logger):  # type: ignore[no-untyped-def]
         prompt = _clean_slack_text(event.get("text", ""))
         thread_ts = event.get("thread_ts") or event.get("ts")
-        say(text="Investigating with Coral. I'll be conservative about claims.", thread_ts=thread_ts)
+        is_followup = event.get("thread_ts") is not None
+
+        # When the mention is in an existing thread, fetch the prior turns so
+        # the agent has the original alert + investigation as context. For a
+        # fresh mention (thread_ts == ts), history is empty.
+        message_history: list[ModelMessage] = []
+        if is_followup:
+            message_history = _fetch_thread_history(
+                client,
+                event["channel"],
+                thread_ts,
+                bot_user_id,
+                exclude_ts=event.get("ts"),
+            )
+            logger.info("loaded %d prior turns for thread %s", len(message_history), thread_ts)
+
+        say(
+            text="Picking up the thread..." if is_followup else "Investigating with Coral. I'll be conservative about claims.",
+            thread_ts=thread_ts,
+        )
         try:
             answer = asyncio.run(
-                PydanticSreAgent().answer(prompt, slack_context=_event_context(event))
+                PydanticSreAgent().answer(
+                    prompt,
+                    slack_context=_event_context(event),
+                    message_history=message_history or None,
+                )
             )
         except Exception:
             logger.exception("SRE agent failed")
