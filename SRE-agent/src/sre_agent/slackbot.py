@@ -335,18 +335,16 @@ def _final_assessment_blocks(
     tool_calls: int | None = None,
     duration_seconds: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Build the final-reply block sequence: severity alert banner on top,
-    the markdown assessment, and an optional context block at the bottom
-    showing the model, tool-call count, and wall-clock duration so the
-    operator can see at a glance how the investigation was produced.
-    Falls back gracefully when any piece is missing."""
+    """Build the final-reply block sequence: the markdown assessment plus
+    an optional context block at the bottom showing the model, tool-call
+    count, and wall-clock duration so the operator can see at a glance how
+    the investigation was produced. (Earlier versions led with a Slack
+    `alert` block, but it turns out the `alert` block type is only valid
+    in modal/home surfaces -- both chat.postMessage and chat.stopStream
+    reject it as "Unsupported block type". The plan-title and the markdown
+    body's `## Summary` section already carry the severity signal.)"""
     blocks: list[dict[str, Any]] = []
-    if headline.strip():
-        blocks.append({
-            "type": "alert",
-            "level": _alert_level_for(headline),
-            "text": {"type": "mrkdwn", "text": headline.strip()},
-        })
+    _ = headline  # kept for API stability; no longer rendered as an alert block
     # Pull the ## Sources section out of the markdown so we can render it as
     # actual URL buttons (one click to open the monitor/issue/file) instead
     # of leaving it as a markdown bullet list buried at the bottom.
@@ -465,6 +463,10 @@ def _run_streamed_investigation(
         "channel": channel,
         "thread_ts": parent_ts,
         "markdown_text": quick_ack_text,
+        # Declare the stream as a plan stream up front. Without this,
+        # appendStream rejects PlanUpdateChunk / TaskUpdateChunk with
+        # `streaming_mode_mismatch`.
+        "task_display_mode": "plan",
     }
     if team_id:
         start_kwargs["recipient_team_id"] = team_id
