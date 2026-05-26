@@ -1,13 +1,23 @@
 # AI SRE Slackbot with Claude and Coral
 
-This example is a functioning Slackbot for SRE investigations. It uses:
+A working Slackbot that auto-investigates production incidents end-to-end.
 
-- Slack Bolt for Python in Socket Mode
-- Pydantic AI with the Anthropic model provider
+When a Datadog monitor fires into `#alerts`, the bot:
+1. Posts a contextual quick-ack within ~1 second (`:mag: Looking into hello-service — 3 exceptions in last 5m`).
+2. Streams a live Block Kit `plan` block that shows each Coral MCP tool call as it runs (Datadog → Sentry → GitHub) with `in_progress` / `complete` / `error` status per task.
+3. Posts a structured assessment when done — Summary / Evidence / Likely cause / Blast radius / What changed / Mitigation / Sources — with native Slack `header`, GFM `table`, fenced code, and one URL button per source.
+4. Footers each reply with model, tool-call count, and wall-clock duration.
+
+The same flow runs on `@`-mentions (with thread history fetched for follow-ups) and on DMs.
+
+Built with:
+
+- Slack Bolt for Python in Socket Mode (`chat.startStream` / `appendStream` / `stopStream` for the live plan UI)
+- Pydantic AI (model selectable via `SRE_AGENT_MODEL` — default `bedrock:minimax.minimax-m2.5`, current deploy on `anthropic:claude-opus-4-7`)
 - Coral MCP over stdio
 - Coral sources for Datadog, Slack, GitHub, and Sentry
 
-The bot is intentionally read-only. It answers Slack mentions and DMs by querying Coral, then returns an incident-style answer with evidence and uncertainty.
+The bot is intentionally read-only — it queries Coral and reports back; it never pages, deploys, or mutates state.
 
 ## Project tracking
 

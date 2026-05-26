@@ -236,20 +236,6 @@ def _markdown_blocks(text: str) -> list[dict[str, Any]]:
     return [{"type": "markdown", "text": _ensure_table_spacing(text)}]
 
 
-def _alert_level_for(headline: str) -> str:
-    """Map status emojis in a one-line headline to Slack alert block levels.
-
-    Default is "error" -- this banner sits at the top of an alert
-    investigation, so a Datadog monitor firing is the load-bearing case.
-    """
-    low = headline.lower()
-    if ":white_check_mark:" in low or ":green_circle:" in low:
-        return "success"
-    if ":large_yellow_circle:" in low or ":warning:" in low:
-        return "warning"
-    return "error"
-
-
 _SOURCES_SECTION_RE = re.compile(
     r"\n##\s+Sources\s*\n(?P<body>.*?)(?=\n##\s|\Z)", re.DOTALL | re.IGNORECASE
 )
