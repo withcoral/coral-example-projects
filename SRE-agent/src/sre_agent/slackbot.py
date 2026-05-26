@@ -205,11 +205,35 @@ def _task_title_from_tool_call(tool_name: str, tool_args: Any) -> str:
     return f"{tool_name}({short_args})"
 
 
+_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|[\s\-:|]+\|\s*$")
+
+
+def _ensure_table_spacing(text: str) -> str:
+    """GFM tables only render when preceded by a blank line. Models
+    occasionally omit it -- the header row touches the previous paragraph
+    and the parser treats the whole block as prose. Detect any table header
+    (a `|...|` line immediately followed by a `|---|---|` separator) and
+    inject a blank line before it if the previous line isn't already blank."""
+    lines = text.split("\n")
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        is_table_header = (
+            line.lstrip().startswith("|")
+            and i + 1 < len(lines)
+            and _TABLE_SEPARATOR_RE.match(lines[i + 1])
+        )
+        if is_table_header and out and out[-1].strip() != "":
+            out.append("")
+        out.append(line)
+    return "\n".join(out)
+
+
 def _markdown_blocks(text: str) -> list[dict[str, Any]]:
     """Wrap a long text reply in a Slack markdown block so GitHub-flavored
     markdown (## headers, tables, fenced code with language hints, `[link](url)`)
-    renders as rich UI rather than raw syntax."""
-    return [{"type": "markdown", "text": text}]
+    renders as rich UI rather than raw syntax. Also normalises table spacing
+    so a missing blank line before a table doesn't suppress its rendering."""
+    return [{"type": "markdown", "text": _ensure_table_spacing(text)}]
 
 
 def _alert_level_for(headline: str) -> str:
