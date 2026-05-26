@@ -468,8 +468,12 @@ def _run_streamed_investigation(
     }
     if team_id:
         start_kwargs["recipient_team_id"] = team_id
+    # chat.startStream requires recipient_user_id even when the trigger came
+    # from a bot post (e.g. Datadog alert). For human invocations it's the
+    # human; for Datadog alerts it's Datadog's bot user. Either way, just
+    # pass whatever user_id is in the event.
     user_id = event.get("user")
-    if user_id and not event.get("bot_id"):
+    if user_id:
         start_kwargs["recipient_user_id"] = user_id
     try:
         stream_resp = client.chat_startStream(**start_kwargs)
