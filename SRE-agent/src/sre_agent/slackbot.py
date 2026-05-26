@@ -630,8 +630,17 @@ def build_app() -> App:
         # sources + context. Slack's Assistant `set_status` typing indicator
         # is redundant once the plan block is streaming, so we omit it.
         prompt = _clean_slack_text(payload.get("text", ""))
-        channel = payload.get("channel") or context.get("channel_id")
-        thread_ts = payload.get("thread_ts") or payload.get("ts")
+        assistant_thread = payload.get("assistant_thread") or {}
+        channel = (
+            payload.get("channel")
+            or assistant_thread.get("channel_id")
+            or context.get("channel_id")
+        )
+        thread_ts = (
+            payload.get("thread_ts")
+            or assistant_thread.get("thread_ts")
+            or payload.get("ts")
+        )
         if not channel or not thread_ts:
             logger.warning("DM payload missing channel/thread_ts: %s", payload)
             # Fall back to the simple say() flow if we can't open a stream.
