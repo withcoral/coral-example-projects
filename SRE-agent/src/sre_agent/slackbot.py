@@ -10,6 +10,7 @@ from typing import Any
 from dotenv import load_dotenv
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
+    FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -117,6 +118,31 @@ def _is_ack_message(text: str) -> bool:
 # silent forever. Set generously -- the agent is allowed plenty of tool budget
 # (100 rounds, 50 retries per tool), so the timeout should accommodate.
 AGENT_RUN_TIMEOUT_SECONDS = 600
+
+
+def _task_title_from_tool_call(tool_name: str, tool_args: Any) -> str:
+    """Format a short, scannable title for a single Coral MCP tool call. The
+    title shows up in the Slack plan block so an operator can see what the
+    agent is currently doing without reading raw JSON."""
+    args: dict[str, Any] = tool_args if isinstance(tool_args, dict) else {}
+    if tool_name == "sql":
+        sql = (args.get("sql") or "").strip().replace("\n", " ")
+        return f"sql: {sql[:90]}{'…' if len(sql) > 90 else ''}" if sql else "sql"
+    if tool_name in ("describe_table", "list_columns"):
+        table = args.get("table") or args.get("table_name") or "?"
+        return f"{tool_name}({table})"
+    if tool_name == "list_tables":
+        return f"list_tables({args.get('schema') or 'all'})"
+    if tool_name == "search_tables":
+        return f"search_tables({args.get('query') or '?'})"
+    if not args:
+        return tool_name
+    short_args = ", ".join(f"{k}={str(v)[:30]}" for k, v in list(args.items())[:2])
+    return f"{tool_name}({short_args})"
+
+
+def _build_plan_block(title: str, tasks: list[dict[str, str]]) -> dict[str, Any]:
+    return {"type": "plan", "title": title, "tasks": tasks}
 
 
 def _run_with_timeout(coro: Any, timeout: float = AGENT_RUN_TIMEOUT_SECONDS) -> Any:
@@ -262,7 +288,7 @@ def build_app() -> App:
     handled_alert_ts: set[str] = set()
 
     @app.event("message")
-    def handle_alert_message(event, say, logger):  # type: ignore[no-untyped-def]
+    def handle_alert_message(event, say, client, logger):  # type: ignore[no-untyped-def]
         # Only fires on Datadog-app messages in #alerts. Human thread replies
         # need an @-mention to trigger the bot (see handle_app_mention above).
         if not alerts_channel_id or not datadog_app_id:
@@ -278,11 +304,58 @@ def build_app() -> App:
 
         alert_text = _extract_alert_text(event)
         try:
-            ack = asyncio.run(quick_ack(alert_text))
+            quick_ack_text = asyncio.run(quick_ack(alert_text))
         except Exception:
             logger.exception("quick_ack failed")
-            ack = ":mag: Investigating this alert with Coral..."
-        say(text=ack, thread_ts=ts)
+            quick_ack_text = ":mag: Investigating this alert with Coral..."
+
+        # Post the live plan block (replaces the standalone ack). The plan
+        # title doubles as the contextual ack so the user sees a one-line
+        # summary of what the bot is doing. Tasks accrete as the agent makes
+        # tool calls; statuses flip in_progress -> complete on each result.
+        tasks: list[dict[str, str]] = []
+        plan_title = quick_ack_text.lstrip(": ").rstrip()
+        plan_resp = client.chat_postMessage(
+            channel=event["channel"],
+            thread_ts=ts,
+            text=quick_ack_text,  # fallback for old clients
+            blocks=[_build_plan_block(plan_title, tasks)],
+        )
+        plan_msg_ts = plan_resp["ts"]
+
+        def _push_plan_update():
+            try:
+                client.chat_update(
+                    channel=event["channel"],
+                    ts=plan_msg_ts,
+                    text=quick_ack_text,
+                    blocks=[_build_plan_block(plan_title, tasks)],
+                )
+            except Exception:
+                logger.exception("chat.update for plan block failed (ignored)")
+
+        async def stream_handler(_ctx, events):
+            async for ev in events:
+                if isinstance(ev, FunctionToolCallEvent):
+                    call_id = getattr(ev.part, "tool_call_id", None) or str(len(tasks))
+                    title = _task_title_from_tool_call(
+                        ev.part.tool_name, getattr(ev.part, "args", None)
+                    )
+                    tasks.append({
+                        "task_id": call_id,
+                        "title": title,
+                        "status": "in_progress",
+                    })
+                    _push_plan_update()
+                elif isinstance(ev, FunctionToolResultEvent):
+                    call_id = getattr(ev, "tool_call_id", None) or getattr(
+                        getattr(ev, "result", None), "tool_call_id", None
+                    )
+                    for t in tasks:
+                        if t["task_id"] == call_id and t["status"] == "in_progress":
+                            t["status"] = "complete"
+                            break
+                    _push_plan_update()
 
         prompt = "\n\n".join([
             "A Datadog alert just fired. Produce the full structured incident assessment "
@@ -296,10 +369,18 @@ def build_app() -> App:
 
         try:
             answer = _run_with_timeout(
-                PydanticSreAgent().answer(prompt, slack_context=_event_context(event))
+                PydanticSreAgent().answer(
+                    prompt,
+                    slack_context=_event_context(event),
+                    event_stream_handler=stream_handler,
+                )
             )
         except asyncio.TimeoutError:
             logger.warning("SRE agent timed out after %ds on Datadog alert", AGENT_RUN_TIMEOUT_SECONDS)
+            for t in tasks:
+                if t["status"] == "in_progress":
+                    t["status"] = "error"
+            _push_plan_update()
             answer = (
                 f":hourglass_flowing_sand: I had to stop early -- the investigation ran past "
                 f"{AGENT_RUN_TIMEOUT_SECONDS}s. The Sentry issue + Datadog monitor are visible "
@@ -307,7 +388,18 @@ def build_app() -> App:
             )
         except Exception:
             logger.exception("SRE agent failed on Datadog alert")
+            for t in tasks:
+                if t["status"] == "in_progress":
+                    t["status"] = "error"
+            _push_plan_update()
             answer = "I hit an error while investigating this alert. Check the bot logs for details."
+        else:
+            # Successful run -- close out any task that didn't see its result event.
+            for t in tasks:
+                if t["status"] == "in_progress":
+                    t["status"] = "complete"
+            _push_plan_update()
+
         say(text=answer, thread_ts=ts)
 
     return app
