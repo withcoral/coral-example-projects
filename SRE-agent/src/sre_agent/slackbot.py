@@ -50,7 +50,8 @@ hello-service is a Python FastAPI demo app deployed in the coral-demos Kubernete
 Data sources for this service:
 - Datadog: metric hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors. The full alert payload is in the prompt below.
 - Sentry: org slug coral-sm, project slug python-fastapi. sentry.issues holds aggregated exceptions (filter by project for recent ones, with counts, first/last seen, short IDs). sentry.events / sentry.project_events have full stack traces.
-- Source code: GitHub repository withcoral/coral-example-projects. The hello-service app source lives at SRE-agent/demo-app/main.py. Coral's GitHub source exposes github.commits and github.contents (or equivalent file-content tables) for this repo.
+- Source code: GitHub repository withcoral/coral-example-projects. The hello-service app source lives at SRE-agent/demo-app/main.py. Coral's GitHub source exposes github.commits and github.contents for this repo, both of which accept a `ref` filter (branch name or commit SHA).
+  - Heads-up on branches: production-deployed code does not always live on the repo's default branch. If github.contents returns 404 (or empty) for a path you have strong evidence exists (from a Sentry stack trace, for example), the default branch is probably stale and the deploy is running off a development branch. List the repo's branches via github.branches (or equivalent) and retry the same path with `ref = '<that-branch>'` in the WHERE clause. Don't give up after one 404.
 
 URL templates for the Sources section (and inline links):
 - Datadog monitor: https://app.datadoghq.eu/monitors/{MONITOR_ID}
