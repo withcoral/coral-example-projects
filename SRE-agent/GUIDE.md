@@ -67,7 +67,22 @@ Finally, invite the bot to your alerts channel: `/invite @your-bot` in
 ## 3. Fill in `.env`
 
 ```bash
+# Model selection — defaults to bedrock:minimax.minimax-m2.5 (serverless on
+# Bedrock). Override with any pydantic-ai model string, e.g.
+# `anthropic:claude-sonnet-4-6`.
+SRE_AGENT_MODEL=bedrock:minimax.minimax-m2.5
+
+# Used when the model string routes through `bedrock:`. boto3 needs both env
+# vars; AWS_REGION alone is not enough. The bearer token is a long-lived
+# Bedrock API key (the `ABSK…` format), not a short-lived pre-signed URL.
+AWS_REGION=eu-west-1
+AWS_DEFAULT_REGION=eu-west-1
+AWS_BEARER_TOKEN_BEDROCK=bedrock-api-key-...
+
+# Used when the model string routes through `anthropic:` (or if you set
+# ANTHROPIC_MODEL for back-compat). Skip if you only use Bedrock.
 ANTHROPIC_API_KEY=sk-ant-...
+
 SLACK_BOT_TOKEN=xoxb-...          # Bot User OAuth Token
 SLACK_APP_TOKEN=xapp-...          # App-Level Token (connections:write)
 DD_API_KEY=...                    # Datadog API key
@@ -76,6 +91,7 @@ DD_SITE=datadoghq.com
 GITHUB_TOKEN=...
 SENTRY_TOKEN=...
 SENTRY_ORG=...
+SENTRY_DSN=...                    # for the demo hello-service app
 ALERTS_CHANNEL_ID=C...            # the #alerts channel ID (optional)
 DATADOG_SLACK_APP_ID=A...         # Datadog's Slack app ID (optional)
 ```
@@ -83,6 +99,12 @@ DATADOG_SLACK_APP_ID=A...         # Datadog's Slack app ID (optional)
 `ALERTS_CHANNEL_ID` + `DATADOG_SLACK_APP_ID` gate the auto-investigation
 handler — leave them blank and the bot still runs (mentions + DMs only).
 Wiring them up is covered in §10.
+
+> **Model swap.** The default is MiniMax M2.5 via Bedrock because it's
+> serverless on-demand in `eu-west-1` alongside the rest of the demo infra.
+> To use Anthropic directly instead, set `SRE_AGENT_MODEL=anthropic:claude-sonnet-4-6`
+> and provide `ANTHROPIC_API_KEY`. The agent code is model-agnostic — any
+> pydantic-ai-supported model that handles tool use will work.
 
 ## 4. Connect Coral data sources
 

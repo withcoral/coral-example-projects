@@ -118,7 +118,7 @@ class PydanticSreAgent:
         *,
         coral_client: CoralMcpClient | None = None,
         model: str | None = None,
-        max_tool_rounds: int = 12,
+        max_tool_rounds: int = 100,
     ):
         self.coral = coral_client or CoralMcpClient()
         # SRE_AGENT_MODEL is the canonical override; ANTHROPIC_MODEL is kept
@@ -138,7 +138,7 @@ class PydanticSreAgent:
             env=load_coral_env(),
             timeout=10,
             include_instructions=True,
-            max_retries=20,
+            max_retries=50,
         )
         return Agent(
             _pydantic_model_name(self.model),

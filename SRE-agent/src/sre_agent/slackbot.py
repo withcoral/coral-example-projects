@@ -47,22 +47,18 @@ INVESTIGATION_CONTEXT = """\
 hello-service is a Python FastAPI demo app deployed in the coral-demos Kubernetes namespace.
 
 Data sources for this service:
-- Datadog: metric hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors.
-- Sentry: org slug coral-sm, project slug python-fastapi. Use sentry.issues filtered to project python-fastapi for recent exceptions, counts, first/last seen, and short IDs. Stack traces are in sentry.events or sentry.project_events.
-- Source code: GitHub repository withcoral/coral-example-projects. The hello-service app source lives at SRE-agent/demo-app/main.py.
+- Datadog: metric hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors. The full alert payload is in the prompt below.
+- Sentry: org slug coral-sm, project slug python-fastapi. sentry.issues holds aggregated exceptions (filter by project for recent ones, with counts, first/last seen, short IDs). sentry.events / sentry.project_events have full stack traces.
+- Source code: GitHub repository withcoral/coral-example-projects. The hello-service app source lives at SRE-agent/demo-app/main.py. Coral's GitHub source exposes github.commits and github.contents (or equivalent file-content tables) for this repo.
 
-Investigation budget rules -- the agent must obey these to keep response time bounded:
-- Spend at most 2-3 SQL queries per data source. Stop once you have enough evidence for each section.
-- Sentry is the highest-value source -- query it FIRST.
-- If github.contents (or equivalent) returns no rows for SRE-agent/demo-app/main.py, do NOT try alternate paths or repos. Simply note "source file not indexed in Coral's GitHub source yet" under Evidence and rely on the Sentry stack trace (which already gives the file:line) for the Likely cause section.
-- Total query budget across all sources: aim for under 10 SQL calls.
+Investigation guidance:
+- You have a generous tool-call budget. Be thorough: query each data source as many times as you need to get strong evidence. Cross-reference findings across Sentry, GitHub, and Datadog.
+- Sentry is usually the highest-signal source for code-level errors -- start there to find the dominant issue, exception type, and file:line.
+- Pull the actual offending source line from GitHub when possible so the Likely cause section quotes real code, not paraphrase.
+- If github.contents returns no rows for the file, try one alternate (e.g. a parent directory listing to confirm path indexing) -- if that also yields nothing, note the gap in Evidence and rely on the Sentry stack trace for the Likely cause.
+- Check github.commits for recent touches to SRE-agent/demo-app/ around the alert's onset timestamp.
 
-Investigation flow:
-1. Identify the dominant Sentry issue (title + count + short ID).
-2. Pull one or two stack-trace events to confirm the file:line.
-3. Optionally try github.contents once for the file; if not indexed, move on.
-4. Optionally check github.commits once for recent touches to SRE-agent/demo-app/.
-5. Synthesize: Summary / Evidence / Likely cause / Blast radius / What changed / Mitigation.
+Synthesis: produce the full structured assessment (Summary / Evidence / Likely cause / Blast radius / What changed / Mitigation) defined in your system instructions.
 """
 
 
@@ -111,8 +107,9 @@ def _is_ack_message(text: str) -> bool:
 
 # Hard cap on a single agent.answer() call. If the agent hasn't converged by
 # this point we stop and post whatever we have rather than leaving the thread
-# silent forever.
-AGENT_RUN_TIMEOUT_SECONDS = 180
+# silent forever. Set generously -- the agent is allowed plenty of tool budget
+# (100 rounds, 50 retries per tool), so the timeout should accommodate.
+AGENT_RUN_TIMEOUT_SECONDS = 600
 
 
 def _run_with_timeout(coro: Any, timeout: float = AGENT_RUN_TIMEOUT_SECONDS) -> Any:
