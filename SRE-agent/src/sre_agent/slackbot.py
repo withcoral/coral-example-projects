@@ -481,6 +481,8 @@ def _run_streamed_investigation(
         stream_resp = client.chat_startStream(**start_kwargs)
         stream_ts = stream_resp["ts"]
         streaming = True
+        # Push the plan title as a PlanUpdateChunk. In `plan` display mode
+        # this is what gives the plan block its heading.
         try:
             client.chat_appendStream(
                 channel=channel,
@@ -488,7 +490,7 @@ def _run_streamed_investigation(
                 chunks=[PlanUpdateChunk(title=plan_title).to_dict()],
             )
         except Exception:
-            logger.exception("chat.appendStream for plan title failed (continuing)")
+            logger.exception("chat.appendStream for plan title failed (continuing without it)")
     except Exception:
         logger.exception("chat.startStream failed; falling back to plain message")
         stream_ts = None
@@ -572,20 +574,20 @@ def _run_streamed_investigation(
         duration_seconds=duration,
     )
 
+    # Close the stream without final blocks -- stopStream's `blocks` param
+    # has a tighter ceiling than chat.postMessage and the full markdown
+    # assessment hits `msg_too_long` there. Close the plan stream so the
+    # tasks freeze in their final state, then post the assessment as a
+    # separate threaded reply (where the same blocks land cleanly).
     if streaming and stream_ts is not None:
         try:
-            client.chat_stopStream(
-                channel=channel,
-                ts=stream_ts,
-                markdown_text=answer,
-                blocks=final_blocks,
-            )
-            return
+            client.chat_stopStream(channel=channel, ts=stream_ts)
         except Exception:
-            logger.exception("chat.stopStream failed; posting answer as a fallback message")
-    # The `alert` block type is only valid in stopStream's AI-agent context.
-    # If we're falling back to chat.postMessage, drop it -- chat.postMessage
-    # rejects the whole message with "Unsupported block type: alert".
+            logger.exception("chat.stopStream failed (continuing to post final reply)")
+    # Defensive: drop any alert blocks (they're modal/home-only and would
+    # break chat.postMessage with `Unsupported block type: alert`). The
+    # current _final_assessment_blocks doesn't emit alert blocks, but keep
+    # this in case it's restored later via a different mechanism.
     safe_blocks = [b for b in final_blocks if b.get("type") != "alert"]
     say(text=answer, blocks=safe_blocks, thread_ts=parent_ts)
 
