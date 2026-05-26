@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
@@ -198,10 +199,19 @@ def _alert_level_for(headline: str) -> str:
     return "error"
 
 
-def _final_assessment_blocks(headline: str, body: str) -> list[dict[str, Any]]:
-    """Build the final-reply block sequence: a severity alert banner on top,
-    followed by the full markdown assessment. Falls back to just the markdown
-    block if the headline is empty."""
+def _final_assessment_blocks(
+    headline: str,
+    body: str,
+    *,
+    model: str | None = None,
+    tool_calls: int | None = None,
+    duration_seconds: float | None = None,
+) -> list[dict[str, Any]]:
+    """Build the final-reply block sequence: severity alert banner on top,
+    the markdown assessment, and an optional context block at the bottom
+    showing the model, tool-call count, and wall-clock duration so the
+    operator can see at a glance how the investigation was produced.
+    Falls back gracefully when any piece is missing."""
     blocks: list[dict[str, Any]] = []
     if headline.strip():
         blocks.append({
@@ -210,6 +220,24 @@ def _final_assessment_blocks(headline: str, body: str) -> list[dict[str, Any]]:
             "text": {"type": "mrkdwn", "text": headline.strip()},
         })
     blocks.append({"type": "markdown", "text": body})
+
+    meta_parts: list[str] = []
+    if model:
+        # Strip the provider prefix for display (`anthropic:claude-opus-4-7` -> `claude-opus-4-7`).
+        meta_parts.append(f":robot_face: {model.split(':', 1)[-1]}")
+    if tool_calls is not None:
+        meta_parts.append(f":wrench: {tool_calls} Coral {'query' if tool_calls == 1 else 'queries'}")
+    if duration_seconds is not None and duration_seconds > 0:
+        if duration_seconds < 60:
+            dur = f"{duration_seconds:.0f}s"
+        else:
+            dur = f"{int(duration_seconds // 60)}m {int(duration_seconds % 60)}s"
+        meta_parts.append(f":stopwatch: {dur}")
+    if meta_parts:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": " · ".join(meta_parts)}],
+        })
     return blocks
 
 
@@ -409,6 +437,7 @@ def build_app() -> App:
             )
 
         task_titles: dict[str, str] = {}
+        tool_call_count = 0
 
         def _push_task(call_id: str, title: str, status: str):
             task_titles[call_id] = title
@@ -424,8 +453,10 @@ def build_app() -> App:
                 logger.exception("chat.appendStream failed for task %s (ignored)", call_id)
 
         async def stream_handler(_ctx, events):
+            nonlocal tool_call_count
             async for ev in events:
                 if isinstance(ev, FunctionToolCallEvent):
+                    tool_call_count += 1
                     call_id = getattr(ev.part, "tool_call_id", None) or f"call-{len(task_titles)}"
                     title = _task_title_from_tool_call(
                         ev.part.tool_name, getattr(ev.part, "args", None)
@@ -438,6 +469,8 @@ def build_app() -> App:
                     if not call_id or call_id not in task_titles:
                         continue
                     _push_task(call_id, task_titles[call_id], "complete")
+
+        run_started = time.perf_counter()
 
         prompt = "\n\n".join([
             "A Datadog alert just fired. Produce the full structured incident assessment "
@@ -472,8 +505,16 @@ def build_app() -> App:
             final_status_for_open = "error"
 
         # Final reply = severity alert banner (level inferred from the
-        # contextual ack's emoji) + the full markdown assessment.
-        final_blocks = _final_assessment_blocks(quick_ack_text, answer)
+        # contextual ack's emoji) + the full markdown assessment + a context
+        # footer with model / tool count / wall-clock duration.
+        duration = time.perf_counter() - run_started
+        final_blocks = _final_assessment_blocks(
+            quick_ack_text,
+            answer,
+            model=os.getenv("SRE_AGENT_MODEL") or os.getenv("ANTHROPIC_MODEL"),
+            tool_calls=tool_call_count or None,
+            duration_seconds=duration,
+        )
         if streaming and stream_ts is not None:
             try:
                 client.chat_stopStream(
