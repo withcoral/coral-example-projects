@@ -28,7 +28,7 @@ spec:
         - name: sre-agent
           # Pinned by digest for an exact, cache-proof rollout. Image MUST be
           # built `--platform linux/amd64` to match the cluster nodes.
-          image: 092126007228.dkr.ecr.eu-west-1.amazonaws.com/coral-sre-agent@sha256:890dc51b998d8051f998d9d9528b68e93a0849452822c19359006e2f21d93ad4
+          image: 092126007228.dkr.ecr.eu-west-1.amazonaws.com/coral-sre-agent@sha256:02fc09573f698f7cca83e7eaa0d0dcc8598c65b036f6f2a668415658c4e346dd
           imagePullPolicy: IfNotPresent
           # All runtime config/secrets come from the sre-agent-secrets Secret.
           envFrom:

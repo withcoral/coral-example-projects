@@ -139,8 +139,11 @@ def build_app() -> App:
 
         alert_text = _extract_alert_text(event)
         prompt_parts = [
-            "A Datadog alert just fired. Investigate it using Coral: likely cause, "
-            "blast radius, what changed recently, and concrete next checks.",
+            "A Datadog alert just fired. Produce the full structured incident assessment "
+            "defined in your instructions (Summary / Evidence / Likely cause / Blast radius / "
+            "What changed / Mitigation). Ground the Likely cause section in the actual source "
+            "code -- if a Sentry stack trace points at a file:line, look that file up in GitHub "
+            "via Coral and quote the offending line.",
         ]
         context = (os.getenv("INVESTIGATION_CONTEXT") or "").strip()
         if context:
