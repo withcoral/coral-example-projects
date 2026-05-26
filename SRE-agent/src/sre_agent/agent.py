@@ -78,6 +78,7 @@ class PydanticSreAgent:
             env=load_coral_env(),
             timeout=10,
             include_instructions=True,
+            max_retries=20,
         )
         return Agent(
             _pydantic_model_name(self.model),
