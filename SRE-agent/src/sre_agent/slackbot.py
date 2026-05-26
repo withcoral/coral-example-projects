@@ -409,6 +409,7 @@ def _run_streamed_investigation(
     say: Any,
     logger: Any,
     event: dict[str, Any],
+    team_id: str | None = None,
     message_history: list[ModelMessage] | None = None,
 ) -> None:
     """Shared end-to-end flow for both the Datadog alert path and the
@@ -431,13 +432,18 @@ def _run_streamed_investigation(
 
     # chat.startStream rejects both markdown_text+chunks in the same call,
     # so open the stream with the ack text alone and push the plan title
-    # as the first appendStream chunk.
+    # as the first appendStream chunk. The AI-agent streaming endpoint
+    # also requires a recipient_team_id -- we pass the bot's own team_id
+    # captured at startup.
+    start_kwargs: dict[str, Any] = {
+        "channel": channel,
+        "thread_ts": parent_ts,
+        "markdown_text": quick_ack_text,
+    }
+    if team_id:
+        start_kwargs["recipient_team_id"] = team_id
     try:
-        stream_resp = client.chat_startStream(
-            channel=channel,
-            thread_ts=parent_ts,
-            markdown_text=quick_ack_text,
-        )
+        stream_resp = client.chat_startStream(**start_kwargs)
         stream_ts = stream_resp["ts"]
         streaming = True
         try:
@@ -555,15 +561,19 @@ def build_app() -> App:
     app = App(token=token)
     assistant = Assistant()
 
-    # Cache the bot's own user_id once at startup so the thread-history helper
-    # can identify which messages came from us. auth.test is cheap and only
-    # runs once per process.
+    # Cache the bot's identity once at startup. user_id lets the thread-history
+    # helper distinguish bot-authored messages from human ones. team_id is
+    # required by chat.startStream (the AI-agent streaming endpoint rejects
+    # calls without it: `missing_recipient_team_id`).
+    bot_user_id: str | None = None
+    bot_team_id: str | None = None
     try:
-        bot_user_id: str | None = app.client.auth_test()["user_id"]
-        logger.info("bot user_id resolved: %s", bot_user_id)
+        auth = app.client.auth_test()
+        bot_user_id = auth["user_id"]
+        bot_team_id = auth.get("team_id")
+        logger.info("bot user_id=%s team_id=%s", bot_user_id, bot_team_id)
     except Exception:
-        bot_user_id = None
-        logger.exception("auth.test failed; thread history will treat bot replies as user turns")
+        logger.exception("auth.test failed; streaming + thread history will degrade")
 
     @assistant.thread_started
     def thread_started(say, set_suggested_prompts, logger):  # type: ignore[no-untyped-def]
@@ -628,6 +638,7 @@ def build_app() -> App:
             say=say,
             logger=logger,
             event=event,
+            team_id=bot_team_id,
             message_history=message_history,
         )
 
@@ -669,6 +680,7 @@ def build_app() -> App:
             say=say,
             logger=logger,
             event=event,
+            team_id=bot_team_id,
         )
 
     return app
