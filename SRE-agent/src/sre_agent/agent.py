@@ -69,6 +69,38 @@ def _prompt_with_context(user_text: str, slack_context: dict[str, object] | None
     )
 
 
+QUICK_ACK_INSTRUCTIONS = (
+    "Produce ONE short Slack-mrkdwn line acknowledging you're starting to "
+    "investigate the given alert. Lead with the :mag: emoji. Reference the "
+    "affected service and the apparent issue (error rate, exception type, "
+    "endpoint, etc.) so the user sees the bot understood the alert. Under 20 "
+    "words. Do not ask questions or propose actions."
+)
+
+
+async def quick_ack(alert_text: str, *, model: str | None = None) -> str:
+    """Single-shot, no-tools model call producing a context-aware Slack ack.
+
+    Falls back to a hardcoded line if the model call fails -- the alert must
+    still be acknowledged even if the model is having a bad day.
+    """
+    fallback = ":mag: Investigating this alert with Coral..."
+    if not alert_text:
+        return fallback
+    model_name = model or os.getenv("SRE_AGENT_MODEL") or os.getenv("ANTHROPIC_MODEL") or DEFAULT_MODEL
+    try:
+        agent = Agent(
+            _pydantic_model_name(model_name),
+            instructions=QUICK_ACK_INSTRUCTIONS,
+            model_settings=ModelSettings(max_tokens=4000, temperature=0.0),
+        )
+        result = await agent.run(alert_text)
+        text = str(result.output).strip()
+        return text or fallback
+    except Exception:
+        return fallback
+
+
 def _exception_chain_text(exc: BaseException) -> str:
     messages: list[str] = []
     current: BaseException | None = exc
@@ -86,7 +118,7 @@ class PydanticSreAgent:
         *,
         coral_client: CoralMcpClient | None = None,
         model: str | None = None,
-        max_tool_rounds: int = 30,
+        max_tool_rounds: int = 12,
     ):
         self.coral = coral_client or CoralMcpClient()
         # SRE_AGENT_MODEL is the canonical override; ANTHROPIC_MODEL is kept

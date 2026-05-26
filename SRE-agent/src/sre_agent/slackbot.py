@@ -19,7 +19,7 @@ from pydantic_ai.messages import (
 from slack_bolt import App, Assistant
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from sre_agent.agent import PydanticSreAgent
+from sre_agent.agent import PydanticSreAgent, quick_ack
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -47,16 +47,22 @@ INVESTIGATION_CONTEXT = """\
 hello-service is a Python FastAPI demo app deployed in the coral-demos Kubernetes namespace.
 
 Data sources for this service:
-- Datadog: metric hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors; current state and query are inspectable there.
-- Sentry: org slug coral-sm, project slug python-fastapi. Use sentry.issues filtered to project python-fastapi for recent exceptions, counts, first/last seen, and short IDs. Use sentry.project_events or sentry.events to get stack traces.
-- Source code: GitHub repository withcoral/coral-example-projects (URL https://github.com/withcoral/coral-example-projects). The hello-service app lives in SRE-agent/demo-app/main.py. Use github.commits filtered by repo and path to find recent changes. Use github.contents (or equivalent table for fetching file content) to read main.py so you can quote the actual offending line of code.
+- Datadog: metric hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors.
+- Sentry: org slug coral-sm, project slug python-fastapi. Use sentry.issues filtered to project python-fastapi for recent exceptions, counts, first/last seen, and short IDs. Stack traces are in sentry.events or sentry.project_events.
+- Source code: GitHub repository withcoral/coral-example-projects. The hello-service app source lives at SRE-agent/demo-app/main.py.
 
-When investigating alerts for this service:
+Investigation budget rules -- the agent must obey these to keep response time bounded:
+- Spend at most 2-3 SQL queries per data source. Stop once you have enough evidence for each section.
+- Sentry is the highest-value source -- query it FIRST.
+- If github.contents (or equivalent) returns no rows for SRE-agent/demo-app/main.py, do NOT try alternate paths or repos. Simply note "source file not indexed in Coral's GitHub source yet" under Evidence and rely on the Sentry stack trace (which already gives the file:line) for the Likely cause section.
+- Total query budget across all sources: aim for under 10 SQL calls.
+
+Investigation flow:
 1. Identify the dominant Sentry issue (title + count + short ID).
-2. Pull the stack trace and identify file + line number from sentry.events.
-3. Fetch the file from GitHub at that path and quote the buggy lines verbatim.
-4. Check github.commits for recent changes touching SRE-agent/demo-app/ that align with the onset timestamp.
-5. Distinguish immediate mitigation (e.g. add a null guard) from durable fixes (release tagging, input validation, tests).
+2. Pull one or two stack-trace events to confirm the file:line.
+3. Optionally try github.contents once for the file; if not indexed, move on.
+4. Optionally check github.commits once for recent touches to SRE-agent/demo-app/.
+5. Synthesize: Summary / Evidence / Likely cause / Blast radius / What changed / Mitigation.
 """
 
 
@@ -101,6 +107,20 @@ _ACK_SUBSTRINGS = (
 
 def _is_ack_message(text: str) -> bool:
     return any(s in text for s in _ACK_SUBSTRINGS)
+
+
+# Hard cap on a single agent.answer() call. If the agent hasn't converged by
+# this point we stop and post whatever we have rather than leaving the thread
+# silent forever.
+AGENT_RUN_TIMEOUT_SECONDS = 180
+
+
+def _run_with_timeout(coro: Any, timeout: float = AGENT_RUN_TIMEOUT_SECONDS) -> Any:
+    """asyncio.run() wrapping the coroutine in asyncio.wait_for. Lets the
+    Slack handler post a 'had to stop early' fallback instead of hanging."""
+    async def _bounded():
+        return await asyncio.wait_for(coro, timeout=timeout)
+    return asyncio.run(_bounded())
 
 
 def _fetch_thread_history(
@@ -219,12 +239,18 @@ def build_app() -> App:
             thread_ts=thread_ts,
         )
         try:
-            answer = asyncio.run(
+            answer = _run_with_timeout(
                 PydanticSreAgent().answer(
                     prompt,
                     slack_context=_event_context(event),
                     message_history=message_history or None,
                 )
+            )
+        except asyncio.TimeoutError:
+            logger.warning("SRE agent timed out after %ds on @-mention", AGENT_RUN_TIMEOUT_SECONDS)
+            answer = (
+                f":hourglass_flowing_sand: I had to stop early -- this took longer than "
+                f"{AGENT_RUN_TIMEOUT_SECONDS}s. Narrow your question and I'll have another go."
             )
         except Exception:
             logger.exception("SRE agent failed")
@@ -249,11 +275,16 @@ def build_app() -> App:
             return
         handled_alert_ts.add(ts)
 
-        # Immediate ack so the channel sees the bot is on it -- the real
-        # investigation can take 30s+ depending on tool-call depth.
-        say(text=":mag: Investigating this alert with Coral...", thread_ts=ts)
-
         alert_text = _extract_alert_text(event)
+        # Context-aware ack so the channel sees the bot understood the alert
+        # before the full investigation lands. Falls back to a static line if
+        # the quick model call fails.
+        try:
+            ack = asyncio.run(quick_ack(alert_text))
+        except Exception:
+            logger.exception("quick_ack failed")
+            ack = ":mag: Investigating this alert with Coral..."
+        say(text=ack, thread_ts=ts)
         prompt_parts = [
             "A Datadog alert just fired. Produce the full structured incident assessment "
             "defined in your instructions (Summary / Evidence / Likely cause / Blast radius / "
@@ -269,8 +300,15 @@ def build_app() -> App:
         prompt = "\n\n".join(prompt_parts)
 
         try:
-            answer = asyncio.run(
+            answer = _run_with_timeout(
                 PydanticSreAgent().answer(prompt, slack_context=_event_context(event))
+            )
+        except asyncio.TimeoutError:
+            logger.warning("SRE agent timed out after %ds on Datadog alert", AGENT_RUN_TIMEOUT_SECONDS)
+            answer = (
+                f":hourglass_flowing_sand: I had to stop early -- the investigation ran past "
+                f"{AGENT_RUN_TIMEOUT_SECONDS}s. The Sentry issue + Datadog monitor are visible "
+                f"in this alert; ping me with a follow-up question if you want me to dig further."
             )
         except Exception:
             logger.exception("SRE agent failed on Datadog alert")
