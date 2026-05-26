@@ -429,15 +429,25 @@ def _run_streamed_investigation(
 
     plan_title = _strip_leading_emoji(quick_ack_text)
 
+    # chat.startStream rejects both markdown_text+chunks in the same call,
+    # so open the stream with the ack text alone and push the plan title
+    # as the first appendStream chunk.
     try:
         stream_resp = client.chat_startStream(
             channel=channel,
             thread_ts=parent_ts,
             markdown_text=quick_ack_text,
-            chunks=[PlanUpdateChunk(title=plan_title).to_dict()],
         )
         stream_ts = stream_resp["ts"]
         streaming = True
+        try:
+            client.chat_appendStream(
+                channel=channel,
+                ts=stream_ts,
+                chunks=[PlanUpdateChunk(title=plan_title).to_dict()],
+            )
+        except Exception:
+            logger.exception("chat.appendStream for plan title failed (continuing)")
     except Exception:
         logger.exception("chat.startStream failed; falling back to plain message")
         stream_ts = None
@@ -532,7 +542,11 @@ def _run_streamed_investigation(
             return
         except Exception:
             logger.exception("chat.stopStream failed; posting answer as a fallback message")
-    say(text=answer, blocks=final_blocks, thread_ts=parent_ts)
+    # The `alert` block type is only valid in stopStream's AI-agent context.
+    # If we're falling back to chat.postMessage, drop it -- chat.postMessage
+    # rejects the whole message with "Unsupported block type: alert".
+    safe_blocks = [b for b in final_blocks if b.get("type") != "alert"]
+    say(text=answer, blocks=safe_blocks, thread_ts=parent_ts)
 
 
 def build_app() -> App:
