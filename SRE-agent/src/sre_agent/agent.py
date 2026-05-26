@@ -18,9 +18,11 @@ from sre_agent.coral_mcp import CoralMcpClient, load_coral_env
 DEFAULT_MODEL = "bedrock:minimax.minimax-m2.5"
 # MiniMax (and other reasoning-style models) charge reasoning tokens against
 # `max_tokens`, so a tight cap silently kills the run before any user-visible
-# output is generated. 8000 gives the model room for both reasoning and a full
-# structured incident assessment.
-MAX_OUTPUT_TOKENS = 8000
+# output is generated. We set this very high (100k) to give the model
+# unconstrained room for deep reasoning + a full structured incident
+# assessment. Bedrock + MiniMax will cap further if the model has its own
+# per-request limit; otherwise this just makes the budget effectively a non-issue.
+MAX_OUTPUT_TOKENS = 100_000
 
 SYSTEM_PROMPT = """You are a Pydantic AI SRE assistant operating inside Slack.
 
