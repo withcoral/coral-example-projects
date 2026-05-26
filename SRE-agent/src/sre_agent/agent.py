@@ -17,13 +17,13 @@ from sre_agent.coral_mcp import CoralMcpClient, load_coral_env
 # SRE_AGENT_MODEL env var (any pydantic-ai model string, e.g.
 # `anthropic:claude-sonnet-4-6` or `bedrock:anthropic.claude-3-5-sonnet-20241022-v2:0`).
 DEFAULT_MODEL = "bedrock:minimax.minimax-m2.5"
-# MiniMax (and other reasoning-style models) charge reasoning tokens against
-# `max_tokens`, so a tight cap silently kills the run before any user-visible
-# output is generated. We set this very high (100k) to give the model
-# unconstrained room for deep reasoning + a full structured incident
-# assessment. Bedrock + MiniMax will cap further if the model has its own
-# per-request limit; otherwise this just makes the budget effectively a non-issue.
-MAX_OUTPUT_TOKENS = 100_000
+# Bedrock OSS models have varying max-output ceilings (Qwen 3 32B is hard
+# capped at 32k, for example). The real structured assessment lands in
+# roughly 2k–4k tokens, but reasoning-style models (MiniMax, Magistral)
+# also charge reasoning tokens against the same budget. 16k is the
+# sweet spot: enough headroom for reasoning, low enough to fit under
+# every model's ceiling we ship as an option.
+MAX_OUTPUT_TOKENS = 16_000
 
 SYSTEM_PROMPT = """You are a Pydantic AI SRE assistant operating inside Slack.
 
