@@ -228,12 +228,44 @@ def _ensure_table_spacing(text: str) -> str:
     return "\n".join(out)
 
 
+# Slack's markdown block caps the text field at 12000 characters. A long
+# multi-source incident assessment can exceed that, so we split across
+# multiple markdown blocks at safe boundaries (paragraph -> sentence ->
+# hard char cut as last resort).
+_MARKDOWN_BLOCK_LIMIT = 11800  # small safety margin under the 12000 cap
+
+
+def _split_markdown_into_chunks(text: str, limit: int = _MARKDOWN_BLOCK_LIMIT) -> list[str]:
+    """Split a long markdown body so each chunk fits in a markdown block.
+    Prefer paragraph (`\\n\\n`) boundaries, then single-newline, then a hard
+    char cut. Idempotent on already-short inputs."""
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= limit:
+            chunks.append(remaining)
+            break
+        # Find the latest paragraph break within the limit.
+        window = remaining[:limit]
+        cut = window.rfind("\n\n")
+        if cut <= 0:
+            cut = window.rfind("\n")
+        if cut <= 0:
+            cut = limit  # hard fallback: chop mid-line
+        chunks.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip("\n")
+    return chunks
+
+
 def _markdown_blocks(text: str) -> list[dict[str, Any]]:
-    """Wrap a long text reply in a Slack markdown block so GitHub-flavored
-    markdown (## headers, tables, fenced code with language hints, `[link](url)`)
-    renders as rich UI rather than raw syntax. Also normalises table spacing
-    so a missing blank line before a table doesn't suppress its rendering."""
-    return [{"type": "markdown", "text": _ensure_table_spacing(text)}]
+    """Wrap a long text reply in one or more Slack markdown blocks so
+    GitHub-flavored markdown (## headers, tables, fenced code with language
+    hints, `[link](url)`) renders as rich UI. Long bodies are chunked at
+    paragraph boundaries to fit Slack's 12000-char-per-block limit."""
+    normalised = _ensure_table_spacing(text)
+    return [{"type": "markdown", "text": chunk} for chunk in _split_markdown_into_chunks(normalised)]
 
 
 _SOURCES_SECTION_RE = re.compile(
