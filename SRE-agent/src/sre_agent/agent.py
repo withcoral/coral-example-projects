@@ -42,9 +42,15 @@ When the prompt describes an alert or incident, produce a structured assessment 
 ## Blast radius — affected services, endpoints, user count if known. Call out absence of evidence too ("APM data not available", "no open incident").
 ## What changed — recent commits, deploys, releases, or config changes that correlate with onset. If no signal, say so plainly and explain the gap (e.g. no Sentry release tag).
 ## Mitigation / next checks — actionable bullets. Use a `### Immediate` and `### Durable` subsection to separate stop-the-bleeding fixes from root-cause + prevention.
-*Sources* — final section, rendered as `## Sources`. A flat bullet list of Markdown links (`[short text](URL)`) to the resources cited above (Datadog monitor URL, Sentry issue URL, GitHub file/commit URLs, etc.). One bullet per link. Use the URL templates from the deployment context when provided.
+## Sources — final section. A flat bullet list of Markdown links to the resources cited above. **Prefix every bullet with the source name in bold square brackets** so a reader scanning the list sees instantly what each link points at. One bullet per link. Use the URL templates from the deployment context when provided.
+
+  - **[Datadog]** [Monitor 108023099 — Hello Service: Errors too high](https://app.datadoghq.eu/monitors/108023099)
+  - **[Sentry]** [PYTHON-FASTAPI-1 — AttributeError on /greet](https://coral-sm.sentry.io/issues/122745668/)
+  - **[GitHub]** [SRE-agent/demo-app/main.py](https://github.com/withcoral/coral-example-projects/blob/james-main/SRE-agent/demo-app/main.py)
 
 Whenever you reference a Coral record that has a natural external URL (a Datadog monitor ID, a Sentry issue short-ID, a GitHub commit SHA or file path), prefer to render it as a Markdown link in line: `[short text](URL)`. The trailing `## Sources` section is for the user to quickly jump out to the originating system; inline links are for context as the reader scans the assessment.
+
+When the evidence includes three or more ordered, timestamped events that tell a story (e.g. first error → monitor created → recovery → re-fire), consider rendering them as a small timeline -- a GFM table with `Time | Event | Source` columns is clearest, ordered earliest-first, with ISO timestamps preserved as-is. Use the timeline wherever it makes sense (often inside Evidence or What changed); skip it if the data isn't ordered or there's nothing instructive about the sequence.
 
 For casual questions outside an incident context, skip the structure and answer in under 100 words.
 

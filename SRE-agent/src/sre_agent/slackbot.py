@@ -184,6 +184,35 @@ def _markdown_blocks(text: str) -> list[dict[str, Any]]:
     return [{"type": "markdown", "text": text}]
 
 
+def _alert_level_for(headline: str) -> str:
+    """Map status emojis in a one-line headline to Slack alert block levels.
+
+    Default is "error" -- this banner sits at the top of an alert
+    investigation, so a Datadog monitor firing is the load-bearing case.
+    """
+    low = headline.lower()
+    if ":white_check_mark:" in low or ":green_circle:" in low:
+        return "success"
+    if ":large_yellow_circle:" in low or ":warning:" in low:
+        return "warning"
+    return "error"
+
+
+def _final_assessment_blocks(headline: str, body: str) -> list[dict[str, Any]]:
+    """Build the final-reply block sequence: a severity alert banner on top,
+    followed by the full markdown assessment. Falls back to just the markdown
+    block if the headline is empty."""
+    blocks: list[dict[str, Any]] = []
+    if headline.strip():
+        blocks.append({
+            "type": "alert",
+            "level": _alert_level_for(headline),
+            "text": {"type": "mrkdwn", "text": headline.strip()},
+        })
+    blocks.append({"type": "markdown", "text": body})
+    return blocks
+
+
 def _run_with_timeout(coro: Any, timeout: float = AGENT_RUN_TIMEOUT_SECONDS) -> Any:
     """asyncio.run() wrapping the coroutine in asyncio.wait_for. Lets the
     Slack handler post a 'had to stop early' fallback instead of hanging."""
@@ -442,23 +471,23 @@ def build_app() -> App:
             answer = "I hit an error while investigating this alert. Check the bot logs for details."
             final_status_for_open = "error"
 
-        # Stop the stream with the final assessment as a markdown block. Any
-        # task that didn't get a matching result event gets flushed to its
-        # final status here so the rendered plan is clean.
+        # Final reply = severity alert banner (level inferred from the
+        # contextual ack's emoji) + the full markdown assessment.
+        final_blocks = _final_assessment_blocks(quick_ack_text, answer)
         if streaming and stream_ts is not None:
             try:
                 client.chat_stopStream(
                     channel=event["channel"],
                     ts=stream_ts,
                     markdown_text=answer,
-                    blocks=_markdown_blocks(answer),
+                    blocks=final_blocks,
                 )
             except Exception:
                 logger.exception("chat.stopStream failed; posting answer as a fallback message")
-                say(text=answer, blocks=_markdown_blocks(answer), thread_ts=ts)
+                say(text=answer, blocks=final_blocks, thread_ts=ts)
         else:
             # Stream never opened; post the answer as a normal threaded reply.
-            say(text=answer, blocks=_markdown_blocks(answer), thread_ts=ts)
+            say(text=answer, blocks=final_blocks, thread_ts=ts)
 
     return app
 
