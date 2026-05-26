@@ -34,6 +34,23 @@ def _clean_slack_text(text: str) -> str:
     return " ".join(text.split()).strip()
 
 
+def _extract_alert_text(event: dict[str, Any]) -> str:
+    """Datadog posts the alert body via Slack attachments, not the top-level
+    `text`. Pull from both so the agent actually sees what fired."""
+    parts: list[str] = []
+    top = event.get("text")
+    if top:
+        parts.append(top)
+    for att in event.get("attachments") or []:
+        title = att.get("title")
+        if title:
+            parts.append(title)
+        body = att.get("text") or att.get("fallback")
+        if body:
+            parts.append(body)
+    return _clean_slack_text("\n".join(parts))
+
+
 def _event_context(event: dict[str, Any]) -> dict[str, Any]:
     return {
         "channel": event.get("channel"),
@@ -116,12 +133,23 @@ def build_app() -> App:
             return
         handled_alert_ts.add(ts)
 
-        alert_text = _clean_slack_text(event.get("text", ""))
-        prompt = (
+        # Immediate ack so the channel sees the bot is on it -- the real
+        # investigation can take 30s+ depending on tool-call depth.
+        say(text=":mag: Investigating this alert with Coral...", thread_ts=ts)
+
+        alert_text = _extract_alert_text(event)
+        prompt_parts = [
             "A Datadog alert just fired. Investigate it using Coral: likely cause, "
-            "blast radius, what changed recently, and concrete next checks.\n\n"
-            f"Alert:\n{alert_text}"
-        )
+            "blast radius, what changed recently, and concrete next checks.",
+        ]
+        context = (os.getenv("INVESTIGATION_CONTEXT") or "").strip()
+        if context:
+            prompt_parts.append(
+                "Deployment-specific context (service-to-source mapping):\n" + context
+            )
+        prompt_parts.append(f"Alert:\n{alert_text or '(empty alert body)'}")
+        prompt = "\n\n".join(prompt_parts)
+
         try:
             answer = asyncio.run(
                 PydanticSreAgent().answer(prompt, slack_context=_event_context(event))
