@@ -7,6 +7,7 @@ from pydantic_ai import Agent, ModelSettings
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from sre_agent.coral_mcp import CoralMcpClient, load_coral_env
@@ -89,6 +90,20 @@ def _pydantic_model_name(model: str) -> str:
     return f"anthropic:{model}"
 
 
+def _model_settings(*, max_tokens: int, temperature: float = 0.0) -> ModelSettings:
+    """Build ModelSettings with Anthropic prompt caching enabled when we're
+    routing through Anthropic. Caches the system prompt + tool definitions
+    (both static across calls), which on a multi-turn investigation cuts the
+    input-token bill by ~90% on cache hits. The cache flags are silently
+    ignored by non-Anthropic providers (Bedrock/MiniMax etc.)."""
+    return AnthropicModelSettings(
+        max_tokens=max_tokens,
+        temperature=temperature,
+        anthropic_cache_instructions="5m",
+        anthropic_cache_tool_definitions="5m",
+    )
+
+
 def _prompt_with_context(user_text: str, slack_context: dict[str, object] | None) -> str:
     if not slack_context:
         return user_text
@@ -121,7 +136,7 @@ async def quick_ack(alert_text: str, *, model: str | None = None) -> str:
         agent = Agent(
             _pydantic_model_name(model_name),
             instructions=QUICK_ACK_INSTRUCTIONS,
-            model_settings=ModelSettings(max_tokens=4000, temperature=0.0),
+            model_settings=_model_settings(max_tokens=4000),
         )
         result = await agent.run(alert_text)
         text = str(result.output).strip()
@@ -173,7 +188,7 @@ class PydanticSreAgent:
             _pydantic_model_name(self.model),
             instructions=SYSTEM_PROMPT,
             toolsets=[coral_server],
-            model_settings=ModelSettings(max_tokens=MAX_OUTPUT_TOKENS, temperature=0.0),
+            model_settings=_model_settings(max_tokens=MAX_OUTPUT_TOKENS),
             event_stream_handler=event_stream_handler,
         )
 
