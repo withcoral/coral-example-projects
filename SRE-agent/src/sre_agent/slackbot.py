@@ -30,6 +30,29 @@ SUGGESTED_PROMPTS = [
 ]
 
 
+# Hardcoded service-to-source mapping injected into the alert investigation
+# prompt. The agent has no way to know that an alert tagged
+# `service:hello-service` should be cross-referenced against the
+# `python-fastapi` Sentry project + the `withcoral/coral-example-projects`
+# GitHub repo without being told. In a production setup this would come from
+# a service catalog or config; for this demo, a constant is enough.
+INVESTIGATION_CONTEXT = """\
+hello-service is a Python FastAPI demo app deployed in the coral-demos Kubernetes namespace.
+
+Data sources for this service:
+- Datadog: metric hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors; current state and query are inspectable there.
+- Sentry: org slug coral-sm, project slug python-fastapi. Use sentry.issues filtered to project python-fastapi for recent exceptions, counts, first/last seen, and short IDs. Use sentry.project_events or sentry.events to get stack traces.
+- Source code: GitHub repository withcoral/coral-example-projects (URL https://github.com/withcoral/coral-example-projects). The hello-service app lives in SRE-agent/demo-app/main.py. Use github.commits filtered by repo and path to find recent changes. Use github.contents (or equivalent table for fetching file content) to read main.py so you can quote the actual offending line of code.
+
+When investigating alerts for this service:
+1. Identify the dominant Sentry issue (title + count + short ID).
+2. Pull the stack trace and identify file + line number from sentry.events.
+3. Fetch the file from GitHub at that path and quote the buggy lines verbatim.
+4. Check github.commits for recent changes touching SRE-agent/demo-app/ that align with the onset timestamp.
+5. Distinguish immediate mitigation (e.g. add a null guard) from durable fixes (release tagging, input validation, tests).
+"""
+
+
 def _clean_slack_text(text: str) -> str:
     return " ".join(text.split()).strip()
 
@@ -145,11 +168,10 @@ def build_app() -> App:
             "code -- if a Sentry stack trace points at a file:line, look that file up in GitHub "
             "via Coral and quote the offending line.",
         ]
-        context = (os.getenv("INVESTIGATION_CONTEXT") or "").strip()
-        if context:
-            prompt_parts.append(
-                "Deployment-specific context (service-to-source mapping):\n" + context
-            )
+        prompt_parts.append(
+            "Deployment-specific context (service-to-source mapping):\n"
+            + INVESTIGATION_CONTEXT
+        )
         prompt_parts.append(f"Alert:\n{alert_text or '(empty alert body)'}")
         prompt = "\n\n".join(prompt_parts)
 

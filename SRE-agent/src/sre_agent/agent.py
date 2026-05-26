@@ -10,7 +10,11 @@ from pydantic_ai.usage import UsageLimits
 
 from sre_agent.coral_mcp import CoralMcpClient, load_coral_env
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+# Default model is MiniMax M2.5 routed through Bedrock — serverless on-demand,
+# available in eu-west-1 alongside the rest of the demo infra. Override via the
+# SRE_AGENT_MODEL env var (any pydantic-ai model string, e.g.
+# `anthropic:claude-sonnet-4-6` or `bedrock:anthropic.claude-3-5-sonnet-20241022-v2:0`).
+DEFAULT_MODEL = "bedrock:minimax.minimax-m2.5"
 MAX_OUTPUT_TOKENS = 1800
 
 SYSTEM_PROMPT = """You are a Pydantic AI SRE assistant operating inside Slack.
@@ -78,7 +82,14 @@ class PydanticSreAgent:
         max_tool_rounds: int = 30,
     ):
         self.coral = coral_client or CoralMcpClient()
-        self.model = model or os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL)
+        # SRE_AGENT_MODEL is the canonical override; ANTHROPIC_MODEL is kept
+        # for backward compatibility with older deployments.
+        self.model = (
+            model
+            or os.getenv("SRE_AGENT_MODEL")
+            or os.getenv("ANTHROPIC_MODEL")
+            or DEFAULT_MODEL
+        )
         self.max_tool_rounds = max_tool_rounds
 
     def _build_agent(self, *, event_stream_handler=None) -> Agent:
