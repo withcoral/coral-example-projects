@@ -120,11 +120,26 @@ def _is_ack_message(text: str) -> bool:
 AGENT_RUN_TIMEOUT_SECONDS = 600
 
 
+def _coerce_args_to_dict(tool_args: Any) -> dict[str, Any]:
+    """pydantic-ai's ToolCallPart.args can be either a JSON string or a dict
+    depending on how the model emits the call. Normalise to dict."""
+    if isinstance(tool_args, dict):
+        return tool_args
+    if isinstance(tool_args, str):
+        try:
+            import json as _json
+            parsed = _json.loads(tool_args)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def _task_title_from_tool_call(tool_name: str, tool_args: Any) -> str:
     """Format a short, scannable title for a single Coral MCP tool call. The
     title shows up in the Slack plan block so an operator can see what the
     agent is currently doing without reading raw JSON."""
-    args: dict[str, Any] = tool_args if isinstance(tool_args, dict) else {}
+    args = _coerce_args_to_dict(tool_args)
     if tool_name == "sql":
         sql = (args.get("sql") or "").strip().replace("\n", " ")
         return f"sql: {sql[:90]}{'…' if len(sql) > 90 else ''}" if sql else "sql"
@@ -314,7 +329,13 @@ def build_app() -> App:
         # summary of what the bot is doing. Tasks accrete as the agent makes
         # tool calls; statuses flip in_progress -> complete on each result.
         tasks: list[dict[str, str]] = []
-        plan_title = quick_ack_text.lstrip(": ").rstrip()
+        # The plan title field doesn't render emoji codes (`:mag:`), so strip
+        # a leading one if present rather than letting "mag:" leak into the UI.
+        plan_title = quick_ack_text.strip()
+        if plan_title.startswith(":") and " " in plan_title:
+            first, rest = plan_title.split(" ", 1)
+            if first.startswith(":") and first.endswith(":"):
+                plan_title = rest.strip()
         plan_resp = client.chat_postMessage(
             channel=event["channel"],
             thread_ts=ts,
