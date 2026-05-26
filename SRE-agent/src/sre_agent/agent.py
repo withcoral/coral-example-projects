@@ -45,9 +45,9 @@ When the prompt describes an alert or incident, produce a structured assessment 
 ## Mitigation / next checks — actionable bullets. Use a `### Immediate` and `### Durable` subsection to separate stop-the-bleeding fixes from root-cause + prevention.
 ## Sources — final section. A flat bullet list of Markdown links to the resources cited above. **Prefix every bullet with the source name in bold square brackets** so a reader scanning the list sees instantly what each link points at. One bullet per link. Use the URL templates from the deployment context when provided.
 
-  - **[Datadog]** [Monitor 108023099 — Hello Service: Errors too high](https://app.datadoghq.eu/monitors/108023099)
-  - **[Sentry]** [PYTHON-FASTAPI-1 — AttributeError on /greet](https://coral-sm.sentry.io/issues/122745668/)
-  - **[GitHub]** [SRE-agent/demo-app/main.py](https://github.com/withcoral/coral-example-projects/blob/james-main/SRE-agent/demo-app/main.py)
+  - **[Datadog]** [Monitor {monitor_id} — {monitor name}](https://app.datadoghq.com/monitors/{monitor_id})
+  - **[Sentry]** [{ISSUE-SHORT-ID} — {exception type at endpoint}](https://{org}.sentry.io/issues/{numeric_id}/)
+  - **[GitHub]** [{repo path/to/file.py}](https://github.com/{owner}/{repo}/blob/{branch}/{path})
 
 Whenever you reference a Coral record that has a natural external URL (a Datadog monitor ID, a Sentry issue short-ID, a GitHub commit SHA or file path), prefer to render it as a Markdown link in line: `[short text](URL)`. The trailing `## Sources` section is for the user to quickly jump out to the originating system; inline links are for context as the reader scans the assessment.
 
@@ -71,7 +71,7 @@ Response style — your reply is rendered inside a Slack *markdown* Block Kit bl
 
   | Issue | Count | Last seen |
   |-------|-------|-----------|
-  | PYTHON-FASTAPI-1 | 128 | 13:44:37Z |
+  | {ISSUE-SHORT-ID} | {count} | {iso timestamp} |
 - *Block quotes* — `> text`.
 - *Links* — `[short text](https://example.com)` (standard Markdown). The legacy `<url|text>` mrkdwn form does NOT render in the markdown block.
 - *Emoji* — `:emoji_name:` (colon-delimited) still works. Use status emojis sparingly to anchor scanning: :red_circle: critical, :large_yellow_circle: warning, :white_check_mark: ok, :hourglass_flowing_sand: timeout, :mag: investigating.
