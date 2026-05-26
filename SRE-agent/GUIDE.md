@@ -82,6 +82,7 @@ DATADOG_SLACK_APP_ID=A...         # Datadog's Slack app ID (optional)
 
 `ALERTS_CHANNEL_ID` + `DATADOG_SLACK_APP_ID` gate the auto-investigation
 handler — leave them blank and the bot still runs (mentions + DMs only).
+Wiring them up is covered in §10.
 
 ## 4. Connect Coral data sources
 
@@ -161,6 +162,226 @@ kubectl logs deployment/sre-agent -n coral-demos | grep "Bolt app is running"
 
 Then DM the bot or `@`-mention it — a reply confirms the full path
 (Slack → agent → Coral → Claude → Slack) works end to end.
+
+## 10. Wire Datadog → Slack for auto-investigation
+
+Optional but recommended for the SRE demo. This enables the third entry point
+in `slackbot.py`: when the Datadog Slack app posts an alert into `#alerts`,
+the agent replies in-thread with an investigation (likely cause, blast
+radius, what changed, next checks).
+
+Authoritative reference:
+<https://docs.datadoghq.com/integrations/slack/?tab=datadogforslack#setup>.
+Steps below summarise what we did for this project.
+
+### 10a. Install the Datadog app in Slack
+
+Slack → workspace name → **Settings & administration** → **Manage apps** →
+search **Datadog** → **Add to Slack** and authorize. Workspace admin rights
+required.
+
+### 10b. Connect Slack from inside Datadog
+
+In Datadog (EU example): `https://app.datadoghq.eu/integrations/slack`
+(or **Integrations** → **Slack**) → **Configuration** tab → **+ Add Account**.
+A Slack OAuth popup opens; pick the workspace and **Allow**. On return,
+your workspace is listed in the Configuration tab.
+
+> **Site matters.** Use the URL for your Datadog site — `datadoghq.com`,
+> `datadoghq.eu`, `us3.datadoghq.com`, etc. — and make sure `DD_SITE` in
+> `.env` and the k8s Secret match.
+
+### 10c. Name the Slack account and add #alerts
+
+Still on the Slack integration **Configuration** tab, under the workspace:
+
+- **Account name** — a short handle that becomes the notification target,
+  e.g. `alerts` makes `@slack-alerts` work in monitor messages.
+- **+ Add Channel** → enter `#alerts` → **Save**.
+
+### 10d. Invite the Datadog bot to #alerts
+
+In Slack `#alerts`:
+
+```
+/invite @Datadog
+```
+
+Datadog can post into a channel only after its bot is a member.
+
+### 10e. Send a test notification
+
+In Datadog's Slack integration **Configuration** tab, next to the channel
+entry, click **Test**. A test message should arrive in `#alerts` within
+a few seconds.
+
+Common reasons the test message doesn't show up:
+
+| Symptom | Fix |
+|---|---|
+| Test silently does nothing | Bot not in channel — re-run `/invite @Datadog`. |
+| Channel-name typo error | Datadog config has `#alerts` spelled differently from the actual channel. |
+| Wrong workspace | OAuth picked the wrong workspace — remove and re-add. |
+
+### 10f. Capture DATADOG_SLACK_APP_ID
+
+The bot's auto-investigate handler only fires for messages whose `app_id`
+matches Datadog's Slack app in this workspace. Get the value from the test
+message:
+
+1. In Slack `#alerts`, hover the test message → **More actions (⋯)** →
+   **Copy link**, or click **View message source** if your workspace has it.
+2. Easier path: read it from the Slack message metadata in the bot's logs
+   (the message handler logs the incoming event), or query the Slack API
+   `conversations.history` for the channel and look for `app_id` on the
+   Datadog post — it has the form `A0XXXXXX`.
+
+Add it to `.env`:
+
+```bash
+DATADOG_SLACK_APP_ID=A0XXXXXX
+```
+
+Patch the k8s Secret and restart the deployment:
+
+```bash
+kubectl -n coral-demos patch secret sre-agent-secrets \
+  --type=merge -p '{"stringData":{"DATADOG_SLACK_APP_ID":"A0XXXXXX"}}'
+kubectl -n coral-demos rollout restart deployment/sre-agent
+```
+
+With `ALERTS_CHANNEL_ID` + `DATADOG_SLACK_APP_ID` both set, the next real
+Datadog alert posted to `#alerts` triggers an investigation reply in-thread.
+
+## 11. Build a real demo target: `hello-service`
+
+A canary metric is enough to prove the wire works, but the agent has nothing
+*interesting* to investigate when it fires. To do an end-to-end SRE
+investigation, the agent needs a real service, with real exceptions, in real
+Sentry, that a real Datadog monitor can alert on.
+
+`demo-app/` contains a tiny FastAPI app with a deliberate, plausible bug:
+
+```python
+@app.get("/greet")
+def greet(name: str = "alice"):
+    display = USERS.get(name)        # returns None for unknown names
+    return {"message": f"Hello, {display.upper()}!"}  # AttributeError on None
+```
+
+It's the kind of bug everyone has shipped: happy-path code that wasn't tested
+against unknown input. When `/greet?name=dave` hits the deployed pod:
+
+1. Handler raises `AttributeError: 'NoneType' object has no attribute 'upper'`.
+2. Sentry SDK captures the exception with a full Python stack trace.
+3. App middleware pushes a `hello_service.errors` counter to Datadog,
+   tagged `service:hello-service exception:AttributeError`.
+4. A Datadog monitor watching that counter crosses threshold, posts to
+   `#alerts`, the SRE agent investigates in-thread.
+
+### 11a. Create the Sentry project
+
+In a Sentry org isolated from your production data:
+
+1. **Projects** → **Create Project** → choose **Python / FastAPI**.
+2. Name it `hello-service`.
+3. From the project's Getting Started page (or **Settings → [project] → Client
+   Keys (DSN)**), copy the **DSN** — looks like
+   `https://<key>@o<orgid>.ingest.<region>.sentry.io/<projectid>`.
+
+Add the DSN to `.env`:
+
+```bash
+SENTRY_DSN=https://...
+```
+
+> The DSN is what the **app** uses to ship events *into* Sentry. It is
+> distinct from `SENTRY_TOKEN`, which Coral uses to *read* Sentry's API on the
+> agent side. Both come from the same Sentry org but serve opposite directions.
+
+### 11b. Build the image
+
+```bash
+cd demo-app
+docker build --platform linux/amd64 -t hello-service:<git-sha> .
+```
+
+Same `linux/amd64` gotcha as the agent — must match cluster node arch.
+
+### 11c. Push to your registry
+
+Push to whatever registry your cluster pulls from (ECR in this guide), then
+record the digest:
+
+```bash
+docker tag hello-service:<git-sha> <ECR_REPO>/hello-service:<git-sha>
+docker push <ECR_REPO>/hello-service:<git-sha>
+docker inspect --format='{{index .RepoDigests 0}}' <ECR_REPO>/hello-service:<git-sha>
+```
+
+Update the `image:` line in `deploy/hello-service.yaml` with the digest ref
+(`hello-service@sha256:...`) before applying.
+
+### 11d. Create the hello-service Secret in k8s
+
+Just like `sre-agent-secrets`, create the demo app's Secret out-of-band so
+nothing sensitive lands in git:
+
+```bash
+kubectl -n coral-demos create secret generic hello-service-secrets \
+  --from-literal=SENTRY_DSN='https://...' \
+  --from-literal=DD_API_KEY='...' \
+  --from-literal=DD_SITE='datadoghq.eu'
+```
+
+### 11e. Deploy
+
+```bash
+kubectl apply -f deploy/hello-service.yaml
+kubectl -n coral-demos rollout status deployment/hello-service
+kubectl -n coral-demos port-forward svc/hello-service 8000:80
+curl 'http://localhost:8000/'                  # → hello world
+curl 'http://localhost:8000/greet?name=alice'  # → Hello, ALICE!
+curl 'http://localhost:8000/greet?name=dave'   # → 500, Sentry event fires
+```
+
+### 11f. Create the Datadog monitor
+
+In Datadog → **Monitors** → **New Monitor** → **Metric**:
+
+- **Metric**: `hello_service.errors` · aggregation `sum` · over `last 5 minutes`
+- **Group by**: `service` (optional, gives nicer alert text)
+- **Threshold**: `above 5` (so the monitor only fires on a real spike, not
+  one stray request)
+- **No data**: *do not notify* (otherwise idle periods will page)
+- **Title**: `hello-service error rate elevated`
+- **Message body**:
+  ```
+  {{#is_alert}}
+  hello-service is throwing exceptions: {{value}} errors in the last 5m.
+  Investigate: top Sentry issues, recent commits, blast radius.
+  @slack-<your-account>
+  {{/is_alert}}
+  ```
+- **Save**.
+
+### 11g. Trigger and verify
+
+```bash
+scripts/demo_trigger_alert.sh           # 30 requests, all 500
+```
+
+Within ~1–2 minutes you should see, in order:
+1. Sentry: a new `AttributeError: 'NoneType' object has no attribute 'upper'`
+   issue with full traceback in the `hello-service` project.
+2. Datadog: the `hello_service.errors` counter crosses threshold; monitor
+   moves to ALERT.
+3. Slack `#alerts`: Datadog posts the monitor alert.
+4. SRE bot: replies in-thread with an investigation that names the service,
+   identifies the dominant Sentry exception, and suggests next checks.
+
+If any step doesn't happen, work backwards from there using the
+[Troubleshooting](#troubleshooting) table.
 
 ## Troubleshooting
 
