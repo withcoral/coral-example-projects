@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -199,6 +200,70 @@ def _alert_level_for(headline: str) -> str:
     return "error"
 
 
+_SOURCES_SECTION_RE = re.compile(
+    r"\n##\s+Sources\s*\n(?P<body>.*?)(?=\n##\s|\Z)", re.DOTALL | re.IGNORECASE
+)
+_SOURCE_BULLET_RE = re.compile(
+    r"""
+    ^\s*[-*]\s*                            # bullet
+    (?:\*\*\[(?P<source>[^\]]+)\]\*\*\s*)? # optional **[SourceName]** prefix
+    \[(?P<title>[^\]]+)\]\((?P<url>https?://[^)\s]+)\)
+    """,
+    re.VERBOSE,
+)
+
+
+def _split_sources(answer: str) -> tuple[str, list[dict[str, str]]]:
+    """Pull the `## Sources` section out of the markdown body and return
+    (body_without_sources, list_of_sources). Each source is a dict with
+    source / title / url keys parsed from bullets shaped like:
+        - **[Datadog]** [Monitor 108023099 — ...](https://...)
+    Bullets that don't have a `[**Source**]` prefix still get parsed; the
+    `source` field falls back to "Link"."""
+    match = _SOURCES_SECTION_RE.search(answer)
+    if not match:
+        return answer, []
+    sources: list[dict[str, str]] = []
+    for line in match.group("body").splitlines():
+        m = _SOURCE_BULLET_RE.match(line)
+        if m:
+            sources.append({
+                "source": (m.group("source") or "Link").strip(),
+                "title": m.group("title").strip(),
+                "url": m.group("url").strip(),
+            })
+    body = (answer[: match.start()] + answer[match.end():]).rstrip()
+    return body, sources
+
+
+def _source_action_blocks(sources: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Render parsed sources as a header + one or more `actions` blocks with
+    URL buttons. Buttons open the target URL in the browser directly --
+    no action_id handler needed. Slack caps `actions` elements at 25 and
+    button text at 75 chars; we chunk and truncate accordingly."""
+    if not sources:
+        return []
+    blocks: list[dict[str, Any]] = [{
+        "type": "header",
+        "text": {"type": "plain_text", "text": "Sources", "emoji": True},
+    }]
+    # 5 buttons per row keeps each row readable; clip if we somehow have >25.
+    for start in range(0, min(len(sources), 25), 5):
+        elements = []
+        for i, src in enumerate(sources[start : start + 5]):
+            label = f"{src['source']}: {src['title']}" if src['title'] else src['source']
+            if len(label) > 75:
+                label = label[:72] + "…"
+            elements.append({
+                "type": "button",
+                "text": {"type": "plain_text", "text": label},
+                "url": src["url"],
+                "action_id": f"open_source_{start + i}",
+            })
+        blocks.append({"type": "actions", "elements": elements})
+    return blocks
+
+
 def _strip_leading_emoji(text: str) -> str:
     """The Slack `plan` block title field renders text without emoji shortcode
     substitution, so a leading `:mag:` shows up as the literal characters
@@ -232,7 +297,12 @@ def _final_assessment_blocks(
             "level": _alert_level_for(headline),
             "text": {"type": "mrkdwn", "text": headline.strip()},
         })
-    blocks.append({"type": "markdown", "text": body})
+    # Pull the ## Sources section out of the markdown so we can render it as
+    # actual URL buttons (one click to open the monitor/issue/file) instead
+    # of leaving it as a markdown bullet list buried at the bottom.
+    body_without_sources, sources = _split_sources(body)
+    blocks.append({"type": "markdown", "text": body_without_sources})
+    blocks.extend(_source_action_blocks(sources))
 
     meta_parts: list[str] = []
     if model:
