@@ -238,10 +238,6 @@ def build_app() -> App:
             )
             logger.info("loaded %d prior turns for thread %s", len(message_history), thread_ts)
 
-        say(
-            text="Picking up the thread..." if is_followup else "Investigating with Coral. I'll be conservative about claims.",
-            thread_ts=thread_ts,
-        )
         try:
             answer = _run_with_timeout(
                 PydanticSreAgent().answer(
@@ -264,13 +260,22 @@ def build_app() -> App:
     alerts_channel_id = os.getenv("ALERTS_CHANNEL_ID")
     datadog_app_id = os.getenv("DATADOG_SLACK_APP_ID")
     handled_alert_ts: set[str] = set()
-    # Threads the bot has auto-investigated. Human follow-ups in these threads
-    # get an automatic reply -- no need to @-mention. In-memory only; resets
-    # on pod restart, after which users fall back to @-mentioning the bot.
-    engaged_threads: set[str] = set()
 
-    def _run_alert_investigation(event, say, logger):
-        ts = event["ts"]
+    @app.event("message")
+    def handle_alert_message(event, say, logger):  # type: ignore[no-untyped-def]
+        # Only fires on Datadog-app messages in #alerts. Human thread replies
+        # need an @-mention to trigger the bot (see handle_app_mention above).
+        if not alerts_channel_id or not datadog_app_id:
+            return
+        if event.get("subtype") or event.get("channel") != alerts_channel_id:
+            return
+        if datadog_app_id not in (event.get("app_id"), event.get("bot_id")):
+            return
+        ts = event.get("ts")
+        if not ts or ts in handled_alert_ts:
+            return
+        handled_alert_ts.add(ts)
+
         alert_text = _extract_alert_text(event)
         try:
             ack = asyncio.run(quick_ack(alert_text))
@@ -298,70 +303,12 @@ def build_app() -> App:
             answer = (
                 f":hourglass_flowing_sand: I had to stop early -- the investigation ran past "
                 f"{AGENT_RUN_TIMEOUT_SECONDS}s. The Sentry issue + Datadog monitor are visible "
-                f"in this alert; ping me with a follow-up question if you want me to dig further."
+                f"in this alert; @-mention me with a follow-up question if you want me to dig further."
             )
         except Exception:
             logger.exception("SRE agent failed on Datadog alert")
             answer = "I hit an error while investigating this alert. Check the bot logs for details."
         say(text=answer, thread_ts=ts)
-
-    def _run_threaded_followup(event, say, client, logger):
-        thread_ts = event["thread_ts"]
-        prompt = _clean_slack_text(event.get("text", ""))
-        history = _fetch_thread_history(
-            client,
-            event["channel"],
-            thread_ts,
-            bot_user_id,
-            exclude_ts=event.get("ts"),
-        )
-        logger.info("auto follow-up: %d prior turns in thread %s", len(history), thread_ts)
-        say(text=":speech_balloon: One sec, checking...", thread_ts=thread_ts)
-        try:
-            answer = _run_with_timeout(
-                PydanticSreAgent().answer(
-                    prompt,
-                    slack_context=_event_context(event),
-                    message_history=history or None,
-                )
-            )
-        except asyncio.TimeoutError:
-            logger.warning("auto follow-up timed out after %ds", AGENT_RUN_TIMEOUT_SECONDS)
-            answer = (
-                f":hourglass_flowing_sand: That took longer than {AGENT_RUN_TIMEOUT_SECONDS}s. "
-                f"Narrow it down and I'll try again."
-            )
-        except Exception:
-            logger.exception("auto follow-up failed")
-            answer = "I hit an error on that follow-up. Check the bot logs."
-        say(text=answer, thread_ts=thread_ts)
-
-    @app.event("message")
-    def handle_alert_message(event, say, client, logger):  # type: ignore[no-untyped-def]
-        # No-op unless #alerts is configured, so the bot runs fine without it.
-        if not alerts_channel_id or not datadog_app_id:
-            return
-        if event.get("subtype") or event.get("channel") != alerts_channel_id:
-            return
-
-        is_datadog = datadog_app_id in (event.get("app_id"), event.get("bot_id"))
-        if is_datadog:
-            ts = event.get("ts")
-            if not ts or ts in handled_alert_ts:
-                return
-            handled_alert_ts.add(ts)
-            engaged_threads.add(ts)
-            _run_alert_investigation(event, say, logger)
-            return
-
-        # Human follow-up in a thread the bot already auto-investigated.
-        thread_ts = event.get("thread_ts")
-        if not thread_ts or thread_ts not in engaged_threads:
-            return
-        # Skip any bot-authored message (including our own previous replies).
-        if event.get("bot_id") or (bot_user_id and event.get("user") == bot_user_id):
-            return
-        _run_threaded_followup(event, say, client, logger)
 
     return app
 
