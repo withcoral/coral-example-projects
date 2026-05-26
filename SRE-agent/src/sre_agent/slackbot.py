@@ -128,6 +128,31 @@ def _is_ack_message(text: str) -> bool:
 AGENT_RUN_TIMEOUT_SECONDS = 600
 
 
+def _summarize_tool_result(part: Any) -> str:
+    """Produce a one-line summary of a tool's return value for the plan
+    block's `output` field. Coral typically returns a formatted ASCII table,
+    so the count of data rows is the most useful thing to surface."""
+    content = getattr(part, "content", None)
+    if content is None:
+        return ""
+    text = str(content).strip()
+    if not text:
+        return ""
+    lines = text.splitlines()
+    # Coral's ASCII-table format: rows wrapped by lines starting with `+`,
+    # data rows start with `|`. Count the data rows (skip header + separator).
+    if lines and lines[0].startswith("+"):
+        data_lines = [ln for ln in lines if ln.startswith("|") and not ln.startswith("|---")]
+        n_rows = max(len(data_lines) - 1, 0)  # subtract header row
+        return f"{n_rows} row{'s' if n_rows != 1 else ''}"
+    # Plain text result -- take the first non-empty line, truncated.
+    for ln in lines:
+        if ln.strip():
+            ln = ln.strip()
+            return ln[:80] + ("…" if len(ln) > 80 else "")
+    return ""
+
+
 def _coerce_args_to_dict(tool_args: Any) -> dict[str, Any]:
     """pydantic-ai's ToolCallPart.args can be either a JSON string or a dict
     depending on how the model emits the call. Normalise to dict."""
@@ -422,15 +447,21 @@ def _run_streamed_investigation(
     task_titles: dict[str, str] = {}
     tool_call_count = 0
 
-    def _push_task(call_id: str, title: str, status: str):
+    def _push_task(call_id: str, title: str, status: str, output: str | None = None):
         task_titles[call_id] = title
         if not streaming or stream_ts is None:
             return
         try:
+            chunk = TaskUpdateChunk(
+                id=call_id,
+                title=title,
+                status=status,
+                output=output or None,  # None instead of empty string
+            )
             client.chat_appendStream(
                 channel=channel,
                 ts=stream_ts,
-                chunks=[TaskUpdateChunk(id=call_id, title=title, status=status).to_dict()],
+                chunks=[chunk.to_dict()],
             )
         except Exception:
             logger.exception("chat.appendStream failed for task %s (ignored)", call_id)
@@ -453,8 +484,13 @@ def _run_streamed_investigation(
                 # being asked to retry -- mark the failed attempt as error so
                 # the plan reflects which queries actually went wrong before
                 # the retry succeeded.
-                status = "error" if isinstance(part, RetryPromptPart) else "complete"
-                _push_task(call_id, task_titles[call_id], status)
+                if isinstance(part, RetryPromptPart):
+                    status = "error"
+                    output = "retry requested"
+                else:
+                    status = "complete"
+                    output = _summarize_tool_result(part)
+                _push_task(call_id, task_titles[call_id], status, output)
 
     run_started = time.perf_counter()
     try:
