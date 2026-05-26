@@ -16,6 +16,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    RetryPromptPart,
     TextPart,
     UserPromptPart,
 )
@@ -443,12 +444,17 @@ def _run_streamed_investigation(
                 title = _task_title_from_tool_call(ev.part.tool_name, getattr(ev.part, "args", None))
                 _push_task(call_id, title, "in_progress")
             elif isinstance(ev, FunctionToolResultEvent):
-                call_id = getattr(getattr(ev, "part", None), "tool_call_id", None) or getattr(
-                    ev, "tool_call_id", None
-                )
+                part = getattr(ev, "part", None)
+                call_id = getattr(part, "tool_call_id", None) or getattr(ev, "tool_call_id", None)
                 if not call_id or call_id not in task_titles:
                     continue
-                _push_task(call_id, task_titles[call_id], "complete")
+                # RetryPromptPart means the tool call's result wasn't acceptable
+                # (validation failure, schema mismatch, etc.) and the model is
+                # being asked to retry -- mark the failed attempt as error so
+                # the plan reflects which queries actually went wrong before
+                # the retry succeeded.
+                status = "error" if isinstance(part, RetryPromptPart) else "complete"
+                _push_task(call_id, task_titles[call_id], status)
 
     run_started = time.perf_counter()
     try:
