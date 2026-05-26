@@ -60,7 +60,8 @@ Response style — your reply is rendered inside a Slack *markdown* Block Kit bl
   ```
   Language hints (`python`, `bash`, `sql`, `yaml`, `json`) render with syntax highlighting.
 - *Lists* — `-` or `1.` at line start. Nested lists work in the markdown block (two-space indent). Use task lists `- [x] done` / `- [ ] todo` when useful.
-- *Tables* — full GFM pipe syntax. Use them for compact tabular data like a list of recent events or Sentry issues:
+- *Tables* — full GFM pipe syntax. **Must** be preceded by a blank line, or the parser glues the header row onto the previous paragraph and the table doesn't render. Use them for compact tabular data like a list of recent events or Sentry issues:
+
   | Issue | Count | Last seen |
   |-------|-------|-----------|
   | PYTHON-FASTAPI-1 | 128 | 13:44:37Z |

@@ -19,6 +19,10 @@ from pydantic_ai.messages import (
 )
 from slack_bolt import App, Assistant
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_sdk.models.messages.chunk import (
+    PlanUpdateChunk,
+    TaskUpdateChunk,
+)
 
 from sre_agent.agent import PydanticSreAgent, quick_ack
 
@@ -171,10 +175,6 @@ def _task_title_from_tool_call(tool_name: str, tool_args: Any) -> str:
         return tool_name
     short_args = ", ".join(f"{k}={str(v)[:30]}" for k, v in list(args.items())[:2])
     return f"{tool_name}({short_args})"
-
-
-def _build_plan_block(title: str, tasks: list[dict[str, str]]) -> dict[str, Any]:
-    return {"type": "plan", "title": title, "tasks": tasks}
 
 
 def _markdown_blocks(text: str) -> list[dict[str, Any]]:
@@ -348,11 +348,6 @@ def build_app() -> App:
             logger.exception("quick_ack failed")
             quick_ack_text = ":mag: Investigating this alert with Coral..."
 
-        # Post the live plan block (replaces the standalone ack). The plan
-        # title doubles as the contextual ack so the user sees a one-line
-        # summary of what the bot is doing. Tasks accrete as the agent makes
-        # tool calls; statuses flip in_progress -> complete on each result.
-        tasks: list[dict[str, str]] = []
         # The plan title field doesn't render emoji codes (`:mag:`), so strip
         # a leading one if present rather than letting "mag:" leak into the UI.
         plan_title = quick_ack_text.strip()
@@ -360,47 +355,60 @@ def build_app() -> App:
             first, rest = plan_title.split(" ", 1)
             if first.startswith(":") and first.endswith(":"):
                 plan_title = rest.strip()
-        plan_resp = client.chat_postMessage(
-            channel=event["channel"],
-            thread_ts=ts,
-            text=quick_ack_text,  # fallback for old clients
-            blocks=[_build_plan_block(plan_title, tasks)],
-        )
-        plan_msg_ts = plan_resp["ts"]
 
-        def _push_plan_update():
+        # Use Slack's purpose-built streaming API for agent progress. Each
+        # TaskUpdateChunk with a stable `id` updates that task in place --
+        # crucially, this does NOT re-render the whole block (no UI collapse
+        # on update, unlike chat.update).
+        try:
+            stream_resp = client.chat_startStream(
+                channel=event["channel"],
+                thread_ts=ts,
+                markdown_text=quick_ack_text,
+                chunks=[PlanUpdateChunk(title=plan_title).to_dict()],
+            )
+            stream_ts = stream_resp["ts"]
+            streaming = True
+        except Exception:
+            logger.exception("chat.startStream failed; falling back to plain message")
+            stream_ts = None
+            streaming = False
+            client.chat_postMessage(
+                channel=event["channel"],
+                thread_ts=ts,
+                text=quick_ack_text,
+            )
+
+        task_titles: dict[str, str] = {}
+
+        def _push_task(call_id: str, title: str, status: str):
+            task_titles[call_id] = title
+            if not streaming or stream_ts is None:
+                return
             try:
-                client.chat_update(
+                client.chat_appendStream(
                     channel=event["channel"],
-                    ts=plan_msg_ts,
-                    text=quick_ack_text,
-                    blocks=[_build_plan_block(plan_title, tasks)],
+                    ts=stream_ts,
+                    chunks=[TaskUpdateChunk(id=call_id, title=title, status=status).to_dict()],
                 )
             except Exception:
-                logger.exception("chat.update for plan block failed (ignored)")
+                logger.exception("chat.appendStream failed for task %s (ignored)", call_id)
 
         async def stream_handler(_ctx, events):
             async for ev in events:
                 if isinstance(ev, FunctionToolCallEvent):
-                    call_id = getattr(ev.part, "tool_call_id", None) or str(len(tasks))
+                    call_id = getattr(ev.part, "tool_call_id", None) or f"call-{len(task_titles)}"
                     title = _task_title_from_tool_call(
                         ev.part.tool_name, getattr(ev.part, "args", None)
                     )
-                    tasks.append({
-                        "task_id": call_id,
-                        "title": title,
-                        "status": "in_progress",
-                    })
-                    _push_plan_update()
+                    _push_task(call_id, title, "in_progress")
                 elif isinstance(ev, FunctionToolResultEvent):
-                    call_id = getattr(ev, "tool_call_id", None) or getattr(
-                        getattr(ev, "result", None), "tool_call_id", None
-                    )
-                    for t in tasks:
-                        if t["task_id"] == call_id and t["status"] == "in_progress":
-                            t["status"] = "complete"
-                            break
-                    _push_plan_update()
+                    call_id = getattr(
+                        getattr(ev, "part", None), "tool_call_id", None
+                    ) or getattr(ev, "tool_call_id", None)
+                    if not call_id or call_id not in task_titles:
+                        continue
+                    _push_task(call_id, task_titles[call_id], "complete")
 
         prompt = "\n\n".join([
             "A Datadog alert just fired. Produce the full structured incident assessment "
@@ -420,32 +428,37 @@ def build_app() -> App:
                     event_stream_handler=stream_handler,
                 )
             )
+            final_status_for_open = "complete"
         except asyncio.TimeoutError:
             logger.warning("SRE agent timed out after %ds on Datadog alert", AGENT_RUN_TIMEOUT_SECONDS)
-            for t in tasks:
-                if t["status"] == "in_progress":
-                    t["status"] = "error"
-            _push_plan_update()
             answer = (
                 f":hourglass_flowing_sand: I had to stop early -- the investigation ran past "
                 f"{AGENT_RUN_TIMEOUT_SECONDS}s. The Sentry issue + Datadog monitor are visible "
                 f"in this alert; @-mention me with a follow-up question if you want me to dig further."
             )
+            final_status_for_open = "error"
         except Exception:
             logger.exception("SRE agent failed on Datadog alert")
-            for t in tasks:
-                if t["status"] == "in_progress":
-                    t["status"] = "error"
-            _push_plan_update()
             answer = "I hit an error while investigating this alert. Check the bot logs for details."
-        else:
-            # Successful run -- close out any task that didn't see its result event.
-            for t in tasks:
-                if t["status"] == "in_progress":
-                    t["status"] = "complete"
-            _push_plan_update()
+            final_status_for_open = "error"
 
-        say(text=answer, blocks=_markdown_blocks(answer), thread_ts=ts)
+        # Stop the stream with the final assessment as a markdown block. Any
+        # task that didn't get a matching result event gets flushed to its
+        # final status here so the rendered plan is clean.
+        if streaming and stream_ts is not None:
+            try:
+                client.chat_stopStream(
+                    channel=event["channel"],
+                    ts=stream_ts,
+                    markdown_text=answer,
+                    blocks=_markdown_blocks(answer),
+                )
+            except Exception:
+                logger.exception("chat.stopStream failed; posting answer as a fallback message")
+                say(text=answer, blocks=_markdown_blocks(answer), thread_ts=ts)
+        else:
+            # Stream never opened; post the answer as a normal threaded reply.
+            say(text=answer, blocks=_markdown_blocks(answer), thread_ts=ts)
 
     return app
 
