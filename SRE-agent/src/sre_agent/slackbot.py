@@ -457,8 +457,10 @@ def _run_streamed_investigation(
     # chat.startStream rejects both markdown_text+chunks in the same call,
     # so open the stream with the ack text alone and push the plan title
     # as the first appendStream chunk. The AI-agent streaming endpoint
-    # also requires a recipient_team_id -- we pass the bot's own team_id
-    # captured at startup.
+    # needs recipient_team_id, and -- when the invocation came from a
+    # specific human (an @-mention, not a bot-posted alert) -- also
+    # needs recipient_user_id, otherwise the streaming UI degrades to
+    # a plain text rendering.
     start_kwargs: dict[str, Any] = {
         "channel": channel,
         "thread_ts": parent_ts,
@@ -466,6 +468,9 @@ def _run_streamed_investigation(
     }
     if team_id:
         start_kwargs["recipient_team_id"] = team_id
+    user_id = event.get("user")
+    if user_id and not event.get("bot_id"):
+        start_kwargs["recipient_user_id"] = user_id
     try:
         stream_resp = client.chat_startStream(**start_kwargs)
         stream_ts = stream_resp["ts"]
@@ -605,31 +610,38 @@ def build_app() -> App:
         set_suggested_prompts(prompts=SUGGESTED_PROMPTS)
 
     @assistant.user_message
-    def user_message(payload, set_status, say, logger):  # type: ignore[no-untyped-def]
+    def user_message(payload, set_status, say, client, context, logger):  # type: ignore[no-untyped-def]
+        # Use the same streaming pipeline as @-mentions + alerts so the DM
+        # path also gets contextual ack -> live plan -> alert + markdown +
+        # sources + context. Slack's Assistant `set_status` typing indicator
+        # is redundant once the plan block is streaming, so we omit it.
         prompt = _clean_slack_text(payload.get("text", ""))
-        set_status("investigating with Coral…")
-
-        async def trace(ctx, events):
-            async for event in events:
-                if isinstance(event, FunctionToolCallEvent):
-                    set_status(f"calling {event.part.tool_name}…")
-
-        try:
-            answer = asyncio.run(
-                PydanticSreAgent().answer(
-                    prompt,
-                    slack_context=_event_context(payload),
-                    event_stream_handler=trace,
+        channel = payload.get("channel") or context.get("channel_id")
+        thread_ts = payload.get("thread_ts") or payload.get("ts")
+        if not channel or not thread_ts:
+            logger.warning("DM payload missing channel/thread_ts: %s", payload)
+            # Fall back to the simple say() flow if we can't open a stream.
+            try:
+                answer = asyncio.run(
+                    PydanticSreAgent().answer(prompt, slack_context=_event_context(payload))
                 )
-            )
-        except Exception:
-            logger.exception("SRE agent failed")
-            answer = "I hit an error while querying Coral. Check the bot logs for details."
-        finally:
-            # Always clear the typing-indicator status when we're done, even on error.
-            set_status("")
+            except Exception:
+                logger.exception("SRE agent failed")
+                answer = "I hit an error while querying Coral. Check the bot logs for details."
+            say(answer)
+            return
 
-        say(answer)
+        _run_streamed_investigation(
+            user_input=prompt,
+            prompt=prompt,
+            channel=channel,
+            parent_ts=thread_ts,
+            client=client,
+            say=say,
+            logger=logger,
+            event=payload,
+            team_id=bot_team_id,
+        )
 
     app.use(assistant)
 
