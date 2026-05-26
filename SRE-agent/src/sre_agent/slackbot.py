@@ -459,21 +459,19 @@ def _run_streamed_investigation(
     # specific human (an @-mention, not a bot-posted alert) -- also
     # needs recipient_user_id, otherwise the streaming UI degrades to
     # a plain text rendering.
+    # Open the stream in `plan` task display mode. Pass the plan title as
+    # the very first chunk -- passing markdown_text here would put the
+    # stream in TEXT mode and every subsequent chunks= append would error
+    # with `streaming_mode_mismatch`. The chunks-only start is what locks
+    # the stream into plan mode for the lifetime of the message.
     start_kwargs: dict[str, Any] = {
         "channel": channel,
         "thread_ts": parent_ts,
-        "markdown_text": quick_ack_text,
-        # Declare the stream as a plan stream up front. Without this,
-        # appendStream rejects PlanUpdateChunk / TaskUpdateChunk with
-        # `streaming_mode_mismatch`.
         "task_display_mode": "plan",
+        "chunks": [PlanUpdateChunk(title=plan_title or "Investigating").to_dict()],
     }
     if team_id:
         start_kwargs["recipient_team_id"] = team_id
-    # chat.startStream requires recipient_user_id even when the trigger came
-    # from a bot post (e.g. Datadog alert). For human invocations it's the
-    # human; for Datadog alerts it's Datadog's bot user. Either way, just
-    # pass whatever user_id is in the event.
     user_id = event.get("user")
     if user_id:
         start_kwargs["recipient_user_id"] = user_id
@@ -481,16 +479,6 @@ def _run_streamed_investigation(
         stream_resp = client.chat_startStream(**start_kwargs)
         stream_ts = stream_resp["ts"]
         streaming = True
-        # Push the plan title as a PlanUpdateChunk. In `plan` display mode
-        # this is what gives the plan block its heading.
-        try:
-            client.chat_appendStream(
-                channel=channel,
-                ts=stream_ts,
-                chunks=[PlanUpdateChunk(title=plan_title).to_dict()],
-            )
-        except Exception:
-            logger.exception("chat.appendStream for plan title failed (continuing without it)")
     except Exception:
         logger.exception("chat.startStream failed; falling back to plain message")
         stream_ts = None
