@@ -139,18 +139,34 @@ def _coerce_args_to_dict(tool_args: Any) -> dict[str, Any]:
 def _task_title_from_tool_call(tool_name: str, tool_args: Any) -> str:
     """Format a short, scannable title for a single Coral MCP tool call. The
     title shows up in the Slack plan block so an operator can see what the
-    agent is currently doing without reading raw JSON."""
+    agent is currently doing without reading raw JSON.
+
+    Arg names below match Coral's actual MCP schema (verified via list_tools):
+      sql:            sql
+      list_tables:    schema (optional)
+      search_tables:  pattern, schema (optional)
+      describe_table: schema, table
+      list_columns:   schema, table, pattern (optional)
+    """
     args = _coerce_args_to_dict(tool_args)
     if tool_name == "sql":
         sql = (args.get("sql") or "").strip().replace("\n", " ")
         return f"sql: {sql[:90]}{'…' if len(sql) > 90 else ''}" if sql else "sql"
     if tool_name in ("describe_table", "list_columns"):
-        table = args.get("table") or args.get("table_name") or "?"
-        return f"{tool_name}({table})"
+        schema = args.get("schema") or ""
+        table = args.get("table") or ""
+        qualified = f"{schema}.{table}" if schema and table else (table or schema or "?")
+        pattern = args.get("pattern")
+        suffix = f" /{pattern}/" if pattern else ""
+        return f"{tool_name}({qualified}){suffix}"
     if tool_name == "list_tables":
         return f"list_tables({args.get('schema') or 'all'})"
     if tool_name == "search_tables":
-        return f"search_tables({args.get('query') or '?'})"
+        pattern = args.get("pattern") or "?"
+        scope = args.get("schema")
+        if scope:
+            return f"search_tables(/{pattern}/ in {scope})"
+        return f"search_tables(/{pattern}/)"
     if not args:
         return tool_name
     short_args = ", ".join(f"{k}={str(v)[:30]}" for k, v in list(args.items())[:2])
@@ -159,6 +175,13 @@ def _task_title_from_tool_call(tool_name: str, tool_args: Any) -> str:
 
 def _build_plan_block(title: str, tasks: list[dict[str, str]]) -> dict[str, Any]:
     return {"type": "plan", "title": title, "tasks": tasks}
+
+
+def _markdown_blocks(text: str) -> list[dict[str, Any]]:
+    """Wrap a long text reply in a Slack markdown block so GitHub-flavored
+    markdown (## headers, tables, fenced code with language hints, `[link](url)`)
+    renders as rich UI rather than raw syntax."""
+    return [{"type": "markdown", "text": text}]
 
 
 def _run_with_timeout(coro: Any, timeout: float = AGENT_RUN_TIMEOUT_SECONDS) -> Any:
@@ -297,7 +320,7 @@ def build_app() -> App:
         except Exception:
             logger.exception("SRE agent failed")
             answer = "I hit an error while querying Coral. Check the bot logs for details."
-        say(text=answer, thread_ts=thread_ts)
+        say(text=answer, blocks=_markdown_blocks(answer), thread_ts=thread_ts)
 
     alerts_channel_id = os.getenv("ALERTS_CHANNEL_ID")
     datadog_app_id = os.getenv("DATADOG_SLACK_APP_ID")
@@ -422,7 +445,7 @@ def build_app() -> App:
                     t["status"] = "complete"
             _push_plan_update()
 
-        say(text=answer, thread_ts=ts)
+        say(text=answer, blocks=_markdown_blocks(answer), thread_ts=ts)
 
     return app
 
