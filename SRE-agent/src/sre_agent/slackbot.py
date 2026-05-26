@@ -44,28 +44,26 @@ SUGGESTED_PROMPTS = [
 ]
 
 
-# Optional deployment-specific context (service-to-source mapping) injected
-# into the alert investigation prompt. Without an override the agent will
-# introspect Coral's catalog at runtime to discover what data is available
-# -- which works, but burns extra tool calls. Anyone deploying this template
-# should set SRE_INVESTIGATION_CONTEXT to their own mapping (see README).
-INVESTIGATION_CONTEXT_DEFAULT = """\
-(No deployment-specific service-to-source mapping configured. The agent will
-introspect Coral's catalog at runtime to discover what data is available.)
+# Deployment-specific context (service-to-source mapping) injected into the
+# alert investigation prompt. Forks of this template should edit this
+# constant to describe their own services -- which Datadog metric/tag
+# represents each service, which Sentry project it reports to, which GitHub
+# repo + path holds its source, and any URL/branch quirks.
+INVESTIGATION_CONTEXT = """\
+hello-service is a Python FastAPI demo app deployed in the coral-demos Kubernetes namespace.
 
-If you want to ground investigations faster, set the SRE_INVESTIGATION_CONTEXT
-environment variable to a short paragraph (or a few bullets) describing:
-- The services this bot covers, and how they're tagged in Datadog
-- Which Sentry org/project each service reports to
-- The GitHub repo + path where each service's source lives
-- URL patterns to use for inline links / the Sources section
-- Any branching / ref quirks (e.g. deploys not running off the default branch)
+Data sources for this service:
+- Datadog: metric hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors.
+- Sentry: org slug coral-sm, project slug python-fastapi. sentry.issues holds aggregated exceptions; sentry.events / sentry.project_events have full stack traces.
+- Source code: GitHub repository withcoral/coral-example-projects. The hello-service app source lives at SRE-agent/demo-app/main.py. github.commits and github.contents accept a `ref` filter (branch name or commit SHA).
+  - Heads-up on branches: production-deployed code does not always live on the repo's default branch. If github.contents returns 404 (or empty) for a path you have strong evidence exists (from a Sentry stack trace), the default branch is probably stale and the deploy is running off a development branch. List the repo's branches via github.branches and retry with `ref = '<that-branch>'`.
+
+URL templates for the Sources section (and inline links):
+- Datadog monitor: https://app.datadoghq.eu/monitors/{MONITOR_ID}
+- Sentry issue:    https://coral-sm.sentry.io/issues/{ISSUE_ID}/
+- GitHub file:     https://github.com/withcoral/coral-example-projects/blob/main/{PATH}
+- GitHub commit:   https://github.com/withcoral/coral-example-projects/commit/{SHA}
 """
-
-
-def _investigation_context() -> str:
-    configured = (os.getenv("SRE_INVESTIGATION_CONTEXT") or "").strip()
-    return configured or INVESTIGATION_CONTEXT_DEFAULT
 
 
 def build_app() -> App:
@@ -194,7 +192,7 @@ def build_app() -> App:
             "What changed / Mitigation). Ground the Likely cause section in the actual source "
             "code -- if a Sentry stack trace points at a file:line, look that file up in GitHub "
             "via Coral and quote the offending line.",
-            "Deployment-specific context (service-to-source mapping):\n" + _investigation_context(),
+            "Deployment-specific context (service-to-source mapping):\n" + INVESTIGATION_CONTEXT,
             f"Alert:\n{alert_text or '(empty alert body)'}",
         ])
         run_streamed_investigation(
