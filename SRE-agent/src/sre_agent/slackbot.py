@@ -199,6 +199,19 @@ def _alert_level_for(headline: str) -> str:
     return "error"
 
 
+def _strip_leading_emoji(text: str) -> str:
+    """The Slack `plan` block title field renders text without emoji shortcode
+    substitution, so a leading `:mag:` shows up as the literal characters
+    `:mag:`. Strip that prefix for the plan title; the alert banner below
+    keeps the emoji."""
+    out = text.strip()
+    if out.startswith(":") and " " in out:
+        first, rest = out.split(" ", 1)
+        if first.startswith(":") and first.endswith(":"):
+            return rest.strip()
+    return out
+
+
 def _final_assessment_blocks(
     headline: str,
     body: str,
@@ -290,6 +303,126 @@ def _fetch_thread_history(
     return history
 
 
+def _run_streamed_investigation(
+    *,
+    user_input: str,
+    prompt: str,
+    channel: str,
+    parent_ts: str,
+    client: Any,
+    say: Any,
+    logger: Any,
+    event: dict[str, Any],
+    message_history: list[ModelMessage] | None = None,
+) -> None:
+    """Shared end-to-end flow for both the Datadog alert path and the
+    @-mention path: contextual quick_ack -> live plan stream -> alert +
+    markdown + context final reply. Centralising it here means both entry
+    points give the user identical, real-time feedback.
+
+    user_input is what gets fed to quick_ack -- for an alert that's the
+    extracted alert body; for an @-mention it's the user's question.
+    prompt is what gets fed to the agent. parent_ts is the thread root
+    (alert ts for the alert path, message thread_ts or event ts for an
+    @-mention)."""
+    try:
+        quick_ack_text = asyncio.run(quick_ack(user_input))
+    except Exception:
+        logger.exception("quick_ack failed")
+        quick_ack_text = ":mag: Investigating with Coral..."
+
+    plan_title = _strip_leading_emoji(quick_ack_text)
+
+    try:
+        stream_resp = client.chat_startStream(
+            channel=channel,
+            thread_ts=parent_ts,
+            markdown_text=quick_ack_text,
+            chunks=[PlanUpdateChunk(title=plan_title).to_dict()],
+        )
+        stream_ts = stream_resp["ts"]
+        streaming = True
+    except Exception:
+        logger.exception("chat.startStream failed; falling back to plain message")
+        stream_ts = None
+        streaming = False
+        client.chat_postMessage(channel=channel, thread_ts=parent_ts, text=quick_ack_text)
+
+    task_titles: dict[str, str] = {}
+    tool_call_count = 0
+
+    def _push_task(call_id: str, title: str, status: str):
+        task_titles[call_id] = title
+        if not streaming or stream_ts is None:
+            return
+        try:
+            client.chat_appendStream(
+                channel=channel,
+                ts=stream_ts,
+                chunks=[TaskUpdateChunk(id=call_id, title=title, status=status).to_dict()],
+            )
+        except Exception:
+            logger.exception("chat.appendStream failed for task %s (ignored)", call_id)
+
+    async def stream_handler(_ctx, events):
+        nonlocal tool_call_count
+        async for ev in events:
+            if isinstance(ev, FunctionToolCallEvent):
+                tool_call_count += 1
+                call_id = getattr(ev.part, "tool_call_id", None) or f"call-{len(task_titles)}"
+                title = _task_title_from_tool_call(ev.part.tool_name, getattr(ev.part, "args", None))
+                _push_task(call_id, title, "in_progress")
+            elif isinstance(ev, FunctionToolResultEvent):
+                call_id = getattr(getattr(ev, "part", None), "tool_call_id", None) or getattr(
+                    ev, "tool_call_id", None
+                )
+                if not call_id or call_id not in task_titles:
+                    continue
+                _push_task(call_id, task_titles[call_id], "complete")
+
+    run_started = time.perf_counter()
+    try:
+        answer = _run_with_timeout(
+            PydanticSreAgent().answer(
+                prompt,
+                slack_context=_event_context(event),
+                event_stream_handler=stream_handler,
+                message_history=message_history or None,
+            )
+        )
+    except asyncio.TimeoutError:
+        logger.warning("SRE agent timed out after %ds", AGENT_RUN_TIMEOUT_SECONDS)
+        answer = (
+            f":hourglass_flowing_sand: I had to stop early -- the investigation ran past "
+            f"{AGENT_RUN_TIMEOUT_SECONDS}s. @-mention me with a narrower question if you want me to dig further."
+        )
+    except Exception:
+        logger.exception("SRE agent failed")
+        answer = "I hit an error while querying Coral. Check the bot logs for details."
+
+    duration = time.perf_counter() - run_started
+    final_blocks = _final_assessment_blocks(
+        quick_ack_text,
+        answer,
+        model=os.getenv("SRE_AGENT_MODEL") or os.getenv("ANTHROPIC_MODEL"),
+        tool_calls=tool_call_count or None,
+        duration_seconds=duration,
+    )
+
+    if streaming and stream_ts is not None:
+        try:
+            client.chat_stopStream(
+                channel=channel,
+                ts=stream_ts,
+                markdown_text=answer,
+                blocks=final_blocks,
+            )
+            return
+        except Exception:
+            logger.exception("chat.stopStream failed; posting answer as a fallback message")
+    say(text=answer, blocks=final_blocks, thread_ts=parent_ts)
+
+
 def build_app() -> App:
     load_dotenv()
     token = os.environ["SLACK_BOT_TOKEN"]
@@ -360,24 +493,17 @@ def build_app() -> App:
             )
             logger.info("loaded %d prior turns for thread %s", len(message_history), thread_ts)
 
-        try:
-            answer = _run_with_timeout(
-                PydanticSreAgent().answer(
-                    prompt,
-                    slack_context=_event_context(event),
-                    message_history=message_history or None,
-                )
-            )
-        except asyncio.TimeoutError:
-            logger.warning("SRE agent timed out after %ds on @-mention", AGENT_RUN_TIMEOUT_SECONDS)
-            answer = (
-                f":hourglass_flowing_sand: I had to stop early -- this took longer than "
-                f"{AGENT_RUN_TIMEOUT_SECONDS}s. Narrow your question and I'll have another go."
-            )
-        except Exception:
-            logger.exception("SRE agent failed")
-            answer = "I hit an error while querying Coral. Check the bot logs for details."
-        say(text=answer, blocks=_markdown_blocks(answer), thread_ts=thread_ts)
+        _run_streamed_investigation(
+            user_input=prompt,
+            prompt=prompt,
+            channel=event["channel"],
+            parent_ts=thread_ts,
+            client=client,
+            say=say,
+            logger=logger,
+            event=event,
+            message_history=message_history,
+        )
 
     alerts_channel_id = os.getenv("ALERTS_CHANNEL_ID")
     datadog_app_id = os.getenv("DATADOG_SLACK_APP_ID")
@@ -399,79 +525,6 @@ def build_app() -> App:
         handled_alert_ts.add(ts)
 
         alert_text = _extract_alert_text(event)
-        try:
-            quick_ack_text = asyncio.run(quick_ack(alert_text))
-        except Exception:
-            logger.exception("quick_ack failed")
-            quick_ack_text = ":mag: Investigating this alert with Coral..."
-
-        # The plan title field doesn't render emoji codes (`:mag:`), so strip
-        # a leading one if present rather than letting "mag:" leak into the UI.
-        plan_title = quick_ack_text.strip()
-        if plan_title.startswith(":") and " " in plan_title:
-            first, rest = plan_title.split(" ", 1)
-            if first.startswith(":") and first.endswith(":"):
-                plan_title = rest.strip()
-
-        # Use Slack's purpose-built streaming API for agent progress. Each
-        # TaskUpdateChunk with a stable `id` updates that task in place --
-        # crucially, this does NOT re-render the whole block (no UI collapse
-        # on update, unlike chat.update).
-        try:
-            stream_resp = client.chat_startStream(
-                channel=event["channel"],
-                thread_ts=ts,
-                markdown_text=quick_ack_text,
-                chunks=[PlanUpdateChunk(title=plan_title).to_dict()],
-            )
-            stream_ts = stream_resp["ts"]
-            streaming = True
-        except Exception:
-            logger.exception("chat.startStream failed; falling back to plain message")
-            stream_ts = None
-            streaming = False
-            client.chat_postMessage(
-                channel=event["channel"],
-                thread_ts=ts,
-                text=quick_ack_text,
-            )
-
-        task_titles: dict[str, str] = {}
-        tool_call_count = 0
-
-        def _push_task(call_id: str, title: str, status: str):
-            task_titles[call_id] = title
-            if not streaming or stream_ts is None:
-                return
-            try:
-                client.chat_appendStream(
-                    channel=event["channel"],
-                    ts=stream_ts,
-                    chunks=[TaskUpdateChunk(id=call_id, title=title, status=status).to_dict()],
-                )
-            except Exception:
-                logger.exception("chat.appendStream failed for task %s (ignored)", call_id)
-
-        async def stream_handler(_ctx, events):
-            nonlocal tool_call_count
-            async for ev in events:
-                if isinstance(ev, FunctionToolCallEvent):
-                    tool_call_count += 1
-                    call_id = getattr(ev.part, "tool_call_id", None) or f"call-{len(task_titles)}"
-                    title = _task_title_from_tool_call(
-                        ev.part.tool_name, getattr(ev.part, "args", None)
-                    )
-                    _push_task(call_id, title, "in_progress")
-                elif isinstance(ev, FunctionToolResultEvent):
-                    call_id = getattr(
-                        getattr(ev, "part", None), "tool_call_id", None
-                    ) or getattr(ev, "tool_call_id", None)
-                    if not call_id or call_id not in task_titles:
-                        continue
-                    _push_task(call_id, task_titles[call_id], "complete")
-
-        run_started = time.perf_counter()
-
         prompt = "\n\n".join([
             "A Datadog alert just fired. Produce the full structured incident assessment "
             "defined in your instructions (Summary / Evidence / Likely cause / Blast radius / "
@@ -481,54 +534,16 @@ def build_app() -> App:
             "Deployment-specific context (service-to-source mapping):\n" + INVESTIGATION_CONTEXT,
             f"Alert:\n{alert_text or '(empty alert body)'}",
         ])
-
-        try:
-            answer = _run_with_timeout(
-                PydanticSreAgent().answer(
-                    prompt,
-                    slack_context=_event_context(event),
-                    event_stream_handler=stream_handler,
-                )
-            )
-            final_status_for_open = "complete"
-        except asyncio.TimeoutError:
-            logger.warning("SRE agent timed out after %ds on Datadog alert", AGENT_RUN_TIMEOUT_SECONDS)
-            answer = (
-                f":hourglass_flowing_sand: I had to stop early -- the investigation ran past "
-                f"{AGENT_RUN_TIMEOUT_SECONDS}s. The Sentry issue + Datadog monitor are visible "
-                f"in this alert; @-mention me with a follow-up question if you want me to dig further."
-            )
-            final_status_for_open = "error"
-        except Exception:
-            logger.exception("SRE agent failed on Datadog alert")
-            answer = "I hit an error while investigating this alert. Check the bot logs for details."
-            final_status_for_open = "error"
-
-        # Final reply = severity alert banner (level inferred from the
-        # contextual ack's emoji) + the full markdown assessment + a context
-        # footer with model / tool count / wall-clock duration.
-        duration = time.perf_counter() - run_started
-        final_blocks = _final_assessment_blocks(
-            quick_ack_text,
-            answer,
-            model=os.getenv("SRE_AGENT_MODEL") or os.getenv("ANTHROPIC_MODEL"),
-            tool_calls=tool_call_count or None,
-            duration_seconds=duration,
+        _run_streamed_investigation(
+            user_input=alert_text,
+            prompt=prompt,
+            channel=event["channel"],
+            parent_ts=ts,
+            client=client,
+            say=say,
+            logger=logger,
+            event=event,
         )
-        if streaming and stream_ts is not None:
-            try:
-                client.chat_stopStream(
-                    channel=event["channel"],
-                    ts=stream_ts,
-                    markdown_text=answer,
-                    blocks=final_blocks,
-                )
-            except Exception:
-                logger.exception("chat.stopStream failed; posting answer as a fallback message")
-                say(text=answer, blocks=final_blocks, thread_ts=ts)
-        else:
-            # Stream never opened; post the answer as a normal threaded reply.
-            say(text=answer, blocks=final_blocks, thread_ts=ts)
 
     return app
 

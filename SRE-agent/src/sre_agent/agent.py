@@ -99,10 +99,10 @@ def _prompt_with_context(user_text: str, slack_context: dict[str, object] | None
 
 
 QUICK_ACK_INSTRUCTIONS = (
-    "Produce ONE short Slack-mrkdwn line acknowledging you're starting to "
-    "investigate the given alert. Lead with the :mag: emoji. Reference the "
-    "affected service and the apparent issue (error rate, exception type, "
-    "endpoint, etc.) so the user sees the bot understood the alert. Under 20 "
+    "Produce ONE short Slack-mrkdwn line acknowledging the request you're "
+    "about to handle. Lead with the :mag: emoji. Be specific: name the thing "
+    "you're going to look into (service, error type, endpoint, branch, file, "
+    "or whatever the user asked about) so they see you understood. Under 20 "
     "words. Do not ask questions or propose actions."
 )
 
