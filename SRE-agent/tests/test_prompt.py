@@ -16,7 +16,7 @@ def test_system_prompt_is_read_only_and_evidence_based():
 
 def test_detect_coral_mcp_args_accepts_installed_coral():
     args = detect_coral_mcp_args("coral")
-    assert args in (["mcp"], ["mcp-stdio"])
+    assert args == ["mcp-stdio"]
 
 
 def test_pydantic_model_name_defaults_to_anthropic_provider():

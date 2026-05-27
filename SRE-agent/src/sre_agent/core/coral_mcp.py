@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import shutil
-import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -27,28 +26,15 @@ def load_coral_env() -> dict[str, str]:
 
 
 def detect_coral_mcp_args(coral_bin: str | None = None) -> list[str]:
+    """Return the argv tail for starting Coral's stdio MCP server.
+
+    Coral exposes a single `mcp-stdio` subcommand (since 0.3). This helper
+    just validates the binary is on PATH and returns the canonical args
+    so callers can stay decoupled from the exact subcommand name."""
     command = coral_bin or os.getenv("CORAL_BIN", "coral")
     if shutil.which(command) is None:
         raise CoralMcpError(f"Could not find Coral binary: {command}")
-
-    for args in (["mcp"], ["mcp-stdio"]):
-        try:
-            result = subprocess.run(
-                [command, *args, "--help"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-        except OSError as exc:
-            raise CoralMcpError(f"Could not run {command}: {exc}") from exc
-
-        if result.returncode == 0:
-            return args
-
-    raise CoralMcpError(
-        f"{command} does not expose 'mcp' or 'mcp-stdio'. Upgrade Coral or check PATH."
-    )
+    return ["mcp-stdio"]
 
 
 def _jsonable(value: Any) -> Any:
