@@ -121,6 +121,19 @@ def build_app() -> App:
             say(answer)
             return
 
+        # Fetch prior turns from the assistant thread so DM follow-ups have
+        # context (mirrors the @-mention follow-up flow).
+        message_history: list[ModelMessage] = []
+        if payload.get("ts") and thread_ts and payload.get("ts") != thread_ts:
+            message_history = fetch_thread_history(
+                client, channel, thread_ts, bot_user_id,
+                exclude_ts=payload.get("ts"),
+            )
+            logger.info(
+                "DM follow-up: loaded %d prior turns for thread %s",
+                len(message_history), thread_ts,
+            )
+
         run_streamed_investigation(
             user_input=prompt,
             prompt=prompt,
@@ -130,6 +143,7 @@ def build_app() -> App:
             say=say,
             event=payload,
             team_id=bot_team_id,
+            message_history=message_history,
         )
 
     app.use(assistant)
