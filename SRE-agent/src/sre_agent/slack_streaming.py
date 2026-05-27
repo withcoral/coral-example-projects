@@ -99,13 +99,17 @@ def run_streamed_investigation(
     plan_title = strip_leading_emoji(quick_ack_text)
 
     # ---- 2. Open the stream --------------------------------------------
-    # Open in `plan` task display mode with the title as the first chunk.
-    # Passing markdown_text alongside chunks puts the stream in TEXT mode
-    # and subsequent chunk appends fail with `streaming_mode_mismatch`.
+    # Open in `timeline` task display mode with the title as the first chunk.
+    # Timeline renders each TaskUpdateChunk as a progressive line as it
+    # arrives. `plan` mode (the alternative) batches the whole block and
+    # only renders it at stream close, which makes the live UI feel frozen
+    # at "Thinking..." until the agent finishes. Passing markdown_text
+    # alongside chunks puts the stream in TEXT mode and subsequent chunk
+    # appends fail with `streaming_mode_mismatch`.
     start_kwargs: dict[str, Any] = {
         "channel": channel,
         "thread_ts": parent_ts,
-        "task_display_mode": "plan",
+        "task_display_mode": "timeline",
         "chunks": [PlanUpdateChunk(title=plan_title or "Investigating").to_dict()],
     }
     if team_id:
