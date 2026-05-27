@@ -97,10 +97,6 @@ edit a small number of places:
 
 The full reproduce-from-zero walkthrough (Slack app, Coral, Anthropic/Bedrock, EKS deploy) is in [GUIDE.md](GUIDE.md).
 
-## OSS model comparison
-
-We benchmarked the Bedrock OSS catalog (MiniMax M2.5, Qwen 3 32B / Next 80B / Coder 30B, Mistral Devstral / Magistral) against the real SRE-agent investigation flow. The writeup — methodology, per-model observations, and the recommendation behind the default — is in [docs/oss-model-comparison.md](docs/oss-model-comparison.md).
-
 ## License
 
 Apache 2.0 — see the [LICENSE](../LICENSE) at the repository root.
