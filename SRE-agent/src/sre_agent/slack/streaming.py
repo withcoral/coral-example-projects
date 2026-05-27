@@ -90,8 +90,10 @@ def run_streamed_investigation(
             @-mention follow-ups so the agent has prior turns as context).
     """
     # ---- 1. Contextual quick_ack ---------------------------------------
+    # Hard timeout so a stalled model call can't block the entire reply —
+    # the streaming plan UI is more valuable than a custom ack line.
     try:
-        quick_ack_text = asyncio.run(quick_ack(user_input))
+        quick_ack_text = asyncio.run(asyncio.wait_for(quick_ack(user_input), timeout=8.0))
     except Exception:
         logger.exception("quick_ack failed")
         quick_ack_text = ":mag: Investigating with Coral..."

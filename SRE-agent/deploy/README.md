@@ -18,9 +18,11 @@ replicas would each open a connection and double-process every Slack event.
 The image fields in `deployment.yaml` and `hello-service.yaml` are
 placeholders (`<YOUR_REGISTRY>/...`). You need to:
 
+Run these from the `SRE-agent/` directory (one level above `deploy/`):
+
 1. Build the SRE agent image from the Dockerfile at the SRE-agent root
    (`docker build --platform linux/amd64 -t <reg>/coral-sre-agent:<tag> .`).
-2. Build the demo `hello-service` image from `../demo-app/`
+2. Build the demo `hello-service` image from `./demo-app/`
    (`docker build --platform linux/amd64 -t <reg>/hello-service:<tag> ./demo-app`).
 3. Push both to a registry your cluster can pull from.
 4. Substitute the `<YOUR_REGISTRY>/...:latest` references with your real

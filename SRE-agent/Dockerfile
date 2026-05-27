@@ -10,7 +10,7 @@ RUN curl -fsSL https://withcoral.com/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
 # Install uv (used to manage the Python application).
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.16 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 

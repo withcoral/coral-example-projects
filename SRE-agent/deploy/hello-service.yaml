@@ -30,8 +30,10 @@ spec:
           # Replace with your own image reference before applying. Build from
           # `demo-app/` and push to whichever registry your cluster pulls
           # from. Build for `linux/amd64` to match cluster node arch.
+          # For repeatable rollouts, pin by digest (`@sha256:...`) and switch
+          # imagePullPolicy back to IfNotPresent.
           image: <YOUR_REGISTRY>/hello-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           env:
             - name: SERVICE_NAME
               value: hello-service

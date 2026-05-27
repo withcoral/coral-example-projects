@@ -16,10 +16,21 @@ add_source() {
   fi
 }
 
-[ -n "${DD_API_KEY:-}" ]    && add_source datadog || echo "Skipping datadog: DD_API_KEY not set"
-[ -n "${GITHUB_TOKEN:-}" ]  && add_source github  || echo "Skipping github: GITHUB_TOKEN not set"
-[ -n "${SENTRY_TOKEN:-}" ]  && add_source sentry  || echo "Skipping sentry: SENTRY_TOKEN not set"
-[ -n "${SLACK_TOKEN:-}" ]   && add_source slack   || echo "Skipping slack: SLACK_TOKEN not set"
+if [ -n "${DD_API_KEY:-}" ] && [ -n "${DD_APPLICATION_KEY:-}" ]; then
+  add_source datadog
+else
+  echo "Skipping datadog: DD_API_KEY and DD_APPLICATION_KEY both required"
+fi
+
+[ -n "${GITHUB_TOKEN:-}" ] && add_source github || echo "Skipping github: GITHUB_TOKEN not set"
+
+if [ -n "${SENTRY_TOKEN:-}" ] && [ -n "${SENTRY_ORG:-}" ]; then
+  add_source sentry
+else
+  echo "Skipping sentry: SENTRY_TOKEN and SENTRY_ORG both required"
+fi
+
+[ -n "${SLACK_TOKEN:-}" ] && add_source slack || echo "Skipping slack: SLACK_TOKEN not set"
 
 echo "Coral source configuration complete. Starting bot..."
 exec coral-sre-slackbot

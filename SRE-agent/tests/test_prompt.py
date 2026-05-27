@@ -14,9 +14,9 @@ def test_system_prompt_is_read_only_and_evidence_based():
     assert "unknown" in SYSTEM_PROMPT
 
 
-def test_detect_coral_mcp_args_accepts_installed_coral():
-    args = detect_coral_mcp_args("coral")
-    assert args == ["mcp-stdio"]
+def test_detect_coral_mcp_args_accepts_installed_coral(monkeypatch):
+    monkeypatch.setattr("sre_agent.core.coral_mcp.shutil.which", lambda _name: "/usr/local/bin/coral")
+    assert detect_coral_mcp_args("coral") == ["mcp-stdio"]
 
 
 def test_pydantic_model_name_defaults_to_anthropic_provider():

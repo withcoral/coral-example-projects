@@ -32,7 +32,7 @@ spec:
           # (`<registry>/coral-sre-agent@sha256:...`) rather than by tag.
           # Image MUST be built `--platform linux/amd64` to match the cluster.
           image: <YOUR_REGISTRY>/coral-sre-agent:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           # All runtime config/secrets come from the sre-agent-secrets Secret.
           envFrom:
             - secretRef:

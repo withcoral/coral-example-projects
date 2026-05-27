@@ -75,14 +75,18 @@ def fetch_thread_history(
     for msg in resp.get("messages") or []:
         if exclude_ts and msg.get("ts") == exclude_ts:
             continue
-        text = clean_slack_text(msg.get("text", "")) or extract_alert_text(msg)
+        # extract_alert_text pulls from both `text` and attachments, so a
+        # Datadog alert (attachment-heavy, sparse top-level text) lands in
+        # history with its full body intact.
+        text = extract_alert_text(msg) or clean_slack_text(msg.get("text", ""))
         if not text:
             continue
         if is_ack_message(text):
             continue
-        is_bot_turn = bool(msg.get("bot_id")) or (
-            bot_user_id is not None and msg.get("user") == bot_user_id
-        )
+        # Only OUR bot's messages become assistant turns. Other bots (Datadog
+        # alerts, third-party apps) are external context — treat them as
+        # ModelRequest so the agent doesn't think it said them.
+        is_bot_turn = bot_user_id is not None and msg.get("user") == bot_user_id
         if is_bot_turn:
             history.append(ModelResponse(parts=[TextPart(content=text)]))
         else:
