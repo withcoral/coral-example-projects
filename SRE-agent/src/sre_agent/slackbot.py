@@ -53,13 +53,15 @@ INVESTIGATION_CONTEXT = """\
 hello-service is a Python FastAPI demo app deployed in the coral-demos Kubernetes namespace.
 
 Data sources for this service:
-- Datadog: metric hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors.
-- Sentry: org slug coral-sm, project slug python-fastapi. sentry.issues holds aggregated exceptions; sentry.events / sentry.project_events have full stack traces.
+- Datadog metric: hello_service.errors (count type), tagged service:hello-service. Monitor IDs live in datadog.monitors.
+- Datadog Logs: hello-service ships structured per-request logs to Datadog via the HTTP intake. Each request produces an entry with method/path/status/duration_ms; errors additionally carry error.kind, error.message, error.stack, and query_params. Not currently queryable via Coral (no datadog.logs table) -- reference the Datadog Logs UI by URL when you want a human to inspect raw requests.
+- Sentry: org slug coral-sm, project slug python-fastapi. sentry.issues holds aggregated exceptions; sentry.events / sentry.project_events have full stack traces. Sentry remains the canonical source for individual stack-trace investigation.
 - Source code: GitHub repository withcoral/coral-example-projects. The hello-service app source lives at SRE-agent/demo-app/main.py. github.commits and github.contents accept a `ref` filter (branch name or commit SHA).
   - Heads-up on branches: production-deployed code does not always live on the repo's default branch. If github.contents returns 404 (or empty) for a path you have strong evidence exists (from a Sentry stack trace), the default branch is probably stale and the deploy is running off a development branch. List the repo's branches via github.branches and retry with `ref = '<that-branch>'`.
 
 URL templates for the Sources section (and inline links):
 - Datadog monitor: https://app.datadoghq.eu/monitors/{MONITOR_ID}
+- Datadog Logs:    https://app.datadoghq.eu/logs?query=service%3Ahello-service  (append &from_ts=... &to_ts=... for a time window; include this when the operator might want to grep raw requests around the incident)
 - Sentry issue:    https://coral-sm.sentry.io/issues/{ISSUE_ID}/
 - GitHub file:     https://github.com/withcoral/coral-example-projects/blob/main/{PATH}
 - GitHub commit:   https://github.com/withcoral/coral-example-projects/commit/{SHA}

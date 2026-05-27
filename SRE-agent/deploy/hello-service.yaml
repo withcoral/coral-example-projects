@@ -29,7 +29,7 @@ spec:
         - name: hello-service
           # Pinned by digest for an exact, cache-proof rollout. Build for
           # `linux/amd64` to match cluster node arch.
-          image: 092126007228.dkr.ecr.eu-west-1.amazonaws.com/hello-service@sha256:c596fcd6e74368920f5660cae1651a7f78903826dc87d075e78a8977e03fb9e3
+          image: 092126007228.dkr.ecr.eu-west-1.amazonaws.com/hello-service@sha256:e665372fd8269a1c31f27522a0349d4bea0783c30749ae25f2ca2cb216ec4a8c
           imagePullPolicy: IfNotPresent
           env:
             - name: SERVICE_NAME
