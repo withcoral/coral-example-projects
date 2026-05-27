@@ -6,8 +6,8 @@ import os
 
 from dotenv import load_dotenv
 
-from sre_agent.agent import PydanticSreAgent
-from sre_agent.coral_mcp import CoralMcpClient
+from sre_agent.core.agent import PydanticSreAgent
+from sre_agent.core.coral_mcp import CoralMcpClient
 
 
 async def _ask(prompt: str) -> str:

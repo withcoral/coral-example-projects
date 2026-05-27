@@ -31,14 +31,14 @@ from slack_sdk.models.messages.chunk import (
     TaskUpdateChunk,
 )
 
-from sre_agent.agent import PydanticSreAgent, quick_ack
-from sre_agent.slack_format import (
+from sre_agent.core.agent import PydanticSreAgent, quick_ack
+from sre_agent.slack.format import (
     final_assessment_blocks,
     strip_leading_emoji,
     summarize_tool_result,
     task_title_from_tool_call,
 )
-from sre_agent.slack_thread_history import event_context
+from sre_agent.slack.thread_history import event_context
 
 logger = logging.getLogger(__name__)
 

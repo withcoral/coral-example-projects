@@ -1,11 +1,11 @@
-from sre_agent.agent import (
+from sre_agent.core.agent import (
     PydanticSreAgent,
     SYSTEM_PROMPT,
     _exception_chain_text,
     _prompt_with_context,
     _pydantic_model_name,
 )
-from sre_agent.coral_mcp import detect_coral_mcp_args
+from sre_agent.core.coral_mcp import detect_coral_mcp_args
 
 
 def test_system_prompt_is_read_only_and_evidence_based():

@@ -19,7 +19,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-from sre_agent.slack_format import clean_slack_text, extract_alert_text
+from sre_agent.slack.format import clean_slack_text, extract_alert_text
 
 logger = logging.getLogger(__name__)
 

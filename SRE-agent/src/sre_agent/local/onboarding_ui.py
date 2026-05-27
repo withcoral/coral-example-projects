@@ -13,7 +13,7 @@ import os
 
 import ipywidgets as widgets
 
-from sre_agent.onboarding import update_env
+from sre_agent.local.onboarding import update_env
 
 _MAC_INSTALL = "brew install withcoral/tap/coral"
 _LINUX_INSTALL = "curl -fsSL https://withcoral.com/install.sh | sh"

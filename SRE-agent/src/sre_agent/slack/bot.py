@@ -4,10 +4,10 @@ Thin layer: build the Bolt app, dispatch Slack events into the shared
 investigation pipeline, run the health-check HTTP server. Most of the
 substantive work lives in:
 
-    sre_agent.agent                — pydantic-ai agent + system prompt
-    sre_agent.slack_format         — Block Kit + mrkdwn helpers
-    sre_agent.slack_streaming      — the live-plan + final-reply pipeline
-    sre_agent.slack_thread_history — Slack thread -> message_history
+    sre_agent.core.agent           — pydantic-ai agent + system prompt
+    sre_agent.slack.format         — Block Kit + mrkdwn helpers
+    sre_agent.slack.streaming      — the live-plan + final-reply pipeline
+    sre_agent.slack.thread_history — Slack thread -> message_history
 """
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ from pydantic_ai.messages import ModelMessage
 from slack_bolt import App, Assistant
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from sre_agent.agent import PydanticSreAgent
-from sre_agent.slack_format import clean_slack_text, extract_alert_text
-from sre_agent.slack_streaming import run_streamed_investigation
-from sre_agent.slack_thread_history import event_context, fetch_thread_history
+from sre_agent.core.agent import PydanticSreAgent
+from sre_agent.slack.format import clean_slack_text, extract_alert_text
+from sre_agent.slack.streaming import run_streamed_investigation
+from sre_agent.slack.thread_history import event_context, fetch_thread_history
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)

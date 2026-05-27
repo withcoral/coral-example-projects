@@ -10,7 +10,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from sre_agent.coral_mcp import CoralMcpClient, load_coral_env
+from sre_agent.core.coral_mcp import CoralMcpClient, load_coral_env
 
 # Default model is MiniMax M2.5 routed through Bedrock — serverless on-demand,
 # available in eu-west-1 alongside the rest of the demo infra. Override via the

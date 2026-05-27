@@ -46,8 +46,8 @@ notebook = [
 ]
 
 [project.scripts]
-coral-sre-agent = "sre_agent.cli:main"
-coral-sre-slackbot = "sre_agent.slackbot:main"
+coral-sre-agent = "sre_agent.local.cli:main"
+coral-sre-slackbot = "sre_agent.slack.bot:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sre_agent"]
