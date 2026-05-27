@@ -23,7 +23,7 @@ DEFAULT_MODEL = "anthropic:claude-opus-4-7"
 # also charge reasoning tokens against the same budget. 16k is the
 # sweet spot: enough headroom for reasoning, low enough to fit under
 # every model's ceiling we ship as an option.
-MAX_OUTPUT_TOKENS = 16_000
+MAX_OUTPUT_TOKENS = 32_000
 
 SYSTEM_PROMPT = """You are a Pydantic AI SRE assistant operating inside Slack.
 
