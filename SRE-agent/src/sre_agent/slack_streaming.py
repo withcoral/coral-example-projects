@@ -99,17 +99,20 @@ def run_streamed_investigation(
     plan_title = strip_leading_emoji(quick_ack_text)
 
     # ---- 2. Open the stream --------------------------------------------
-    # Open in `timeline` task display mode with the title as the first chunk.
-    # Timeline renders each TaskUpdateChunk as a progressive line as it
-    # arrives. `plan` mode (the alternative) batches the whole block and
-    # only renders it at stream close, which makes the live UI feel frozen
-    # at "Thinking..." until the agent finishes. Passing markdown_text
-    # alongside chunks puts the stream in TEXT mode and subsequent chunk
-    # appends fail with `streaming_mode_mismatch`.
+    # Open in `plan` task display mode with the title as the first chunk.
+    # `plan` mode groups every TaskUpdateChunk under one plan card with the
+    # title at the top, which is the look we want for the structured
+    # investigation. Trade-off: Slack batches the render until stream close,
+    # so the user sees the plan header during the run but the task list
+    # only fills in once chat.stopStream lands. `timeline` is the
+    # alternative if you want each task to appear live as it arrives, at
+    # the cost of losing the grouping. Passing markdown_text alongside
+    # chunks puts the stream in TEXT mode and subsequent chunk appends
+    # fail with `streaming_mode_mismatch`.
     start_kwargs: dict[str, Any] = {
         "channel": channel,
         "thread_ts": parent_ts,
-        "task_display_mode": "timeline",
+        "task_display_mode": "plan",
         "chunks": [PlanUpdateChunk(title=plan_title or "Investigating").to_dict()],
     }
     if team_id:
