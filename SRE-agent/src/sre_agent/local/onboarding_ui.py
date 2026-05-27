@@ -1,4 +1,4 @@
-"""Widget forms for ``notebooks/pydantic_sre_agent.ipynb``.
+"""Widget forms for ``notebooks/local_sre_agent.ipynb``.
 
 These widgets only handle UI plumbing — text inputs, buttons, status output.
 All Coral CLI calls happen directly in notebook cells (``!coral source add …``)

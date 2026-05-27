@@ -109,7 +109,7 @@ Wiring them up is covered in §10.
 ## 4. Connect Coral data sources
 
 `coral source add <provider>` reads credentials from the environment. Run
-`./scripts/configure_coral.sh`, or step through `notebooks/pydantic_sre_agent.ipynb`
+`./scripts/configure_coral.sh`, or step through `notebooks/local_sre_agent.ipynb`
 for an interactive walkthrough.
 
 > **Gotcha:** the Datadog source needs **both** `DD_API_KEY` *and*
