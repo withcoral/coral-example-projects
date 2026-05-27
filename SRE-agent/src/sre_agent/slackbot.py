@@ -44,11 +44,21 @@ SUGGESTED_PROMPTS = [
 ]
 
 
-# Deployment-specific context (service-to-source mapping) injected into the
-# alert investigation prompt. Forks of this template should edit this
-# constant to describe their own services -- which Datadog metric/tag
-# represents each service, which Sentry project it reports to, which GitHub
-# repo + path holds its source, and any URL/branch quirks.
+# ============================================================================
+# FORK ME: deployment-specific context.
+# ----------------------------------------------------------------------------
+# This block is injected verbatim into the alert-investigation prompt. It
+# tells the agent which Datadog metric/monitor represents your service,
+# which Sentry org+project it reports to, which GitHub repo+path holds the
+# source, and the URL templates it should cite in the final assessment.
+#
+# The values below describe THIS demo (`hello-service`, the Coral Sentry
+# org `coral-sm`, the GitHub repo `withcoral/coral-example-projects`).
+# When you fork this project, rewrite the whole string to describe YOUR
+# service stack. Without that edit, the agent will be told to look at
+# Coral's demo Sentry and GitHub paths — which it can't see, and which
+# will produce nonsense investigations.
+# ============================================================================
 INVESTIGATION_CONTEXT = """\
 hello-service is a Python FastAPI demo app deployed in the coral-demos Kubernetes namespace.
 

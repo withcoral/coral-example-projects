@@ -27,9 +27,10 @@ spec:
     spec:
       containers:
         - name: hello-service
-          # Pinned by digest for an exact, cache-proof rollout. Build for
-          # `linux/amd64` to match cluster node arch.
-          image: 092126007228.dkr.ecr.eu-west-1.amazonaws.com/hello-service@sha256:e665372fd8269a1c31f27522a0349d4bea0783c30749ae25f2ca2cb216ec4a8c
+          # Replace with your own image reference before applying. Build from
+          # `demo-app/` and push to whichever registry your cluster pulls
+          # from. Build for `linux/amd64` to match cluster node arch.
+          image: <YOUR_REGISTRY>/hello-service:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: SERVICE_NAME

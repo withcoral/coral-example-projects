@@ -1,7 +1,8 @@
 # Deploying the SRE Agent
 
-Kubernetes manifests for running the SRE Agent Slack bot in the `coral-demos`
-namespace.
+Kubernetes manifests for running the SRE Agent Slack bot. Configured for the
+`coral-demos` namespace — rename in the manifests if that doesn't fit your
+cluster (search-and-replace across `*.yaml` and `../scripts/demo_trigger_alert.sh`).
 
 ## Architecture note: no Service, no Ingress
 
@@ -11,6 +12,20 @@ Service, Ingress, or LoadBalancer**: nothing needs to route traffic to the pod.
 
 Socket Mode also means the Deployment must run **exactly one replica**. Multiple
 replicas would each open a connection and double-process every Slack event.
+
+## Before you apply
+
+The image fields in `deployment.yaml` and `hello-service.yaml` are
+placeholders (`<YOUR_REGISTRY>/...`). You need to:
+
+1. Build the SRE agent image from the Dockerfile at the SRE-agent root
+   (`docker build --platform linux/amd64 -t <reg>/coral-sre-agent:<tag> .`).
+2. Build the demo `hello-service` image from `../demo-app/`
+   (`docker build --platform linux/amd64 -t <reg>/hello-service:<tag> ./demo-app`).
+3. Push both to a registry your cluster can pull from.
+4. Substitute the `<YOUR_REGISTRY>/...:latest` references with your real
+   image refs. For repeatable rollouts, pin by digest (`@sha256:...`) rather
+   than by tag.
 
 ## Apply order
 
@@ -45,9 +60,3 @@ kubectl create secret generic sre-agent-secrets \
   --from-literal=ALERTS_CHANNEL_ID=... \
   --from-literal=DATADOG_SLACK_APP_ID=...
 ```
-
-## Container image
-
-The image is built from a Dockerfile (added separately) and pushed to Amazon
-ECR. Replace the `<ECR_REPO>:<TAG>` placeholder in `deployment.yaml` with the
-real image reference before deploying.

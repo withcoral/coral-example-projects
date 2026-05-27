@@ -74,6 +74,25 @@ claude mcp add coral --scope project -- coral mcp-stdio
 
 Then run Claude Code from this directory and use `/mcp` to verify the Coral server is available.
 
+## Customize the agent for your stack
+
+This repo ships configured for the demo `hello-service` deployed in Coral's
+internal test environment. To make it useful against your stack you need to
+edit a small number of places:
+
+- **`src/sre_agent/slackbot.py` → `INVESTIGATION_CONTEXT`** — rewrite the
+  whole string to describe your service: Datadog metric/monitor names, the
+  Sentry org+project slug, the GitHub repo+path, and the URL templates the
+  agent cites as sources. This is what tells the agent where to look.
+- **`deploy/deployment.yaml` and `deploy/hello-service.yaml`** — replace the
+  `<YOUR_REGISTRY>/...` placeholders with real image refs after you've built
+  and pushed the containers. Pin by digest for repeatable rollouts.
+- **Namespace** — these manifests use `coral-demos`. Rename across
+  `deploy/*.yaml` and `scripts/demo_trigger_alert.sh` if that doesn't fit
+  your cluster.
+- **Slack workspace + secrets** — see `.env.example` and
+  [GUIDE.md](GUIDE.md) for the full setup.
+
 ## Guide
 
 The full reproduce-from-zero walkthrough (Slack app, Coral, Anthropic/Bedrock, EKS deploy) is in [GUIDE.md](GUIDE.md).

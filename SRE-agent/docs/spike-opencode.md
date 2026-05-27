@@ -1,7 +1,7 @@
-# BENCH-450 — Spike: opencode as an alternative agent backend
+# Spike: opencode as an alternative agent backend
 
-Status: research spike (no code changes). Author exercise for evaluating whether
-`opencode` could replace the Pydantic AI investigation loop in `SRE-agent/`.
+Status: research spike (no code changes). Evaluates whether `opencode` could
+replace the Pydantic AI investigation loop in `SRE-agent/`.
 
 ## Current baseline (what we are comparing against)
 
@@ -88,7 +88,7 @@ gain (provider flexibility) Pydantic AI also offers.
 
 **Do not adopt opencode as the agent backend. Keep Pydantic AI.**
 
-Pydantic AI already gives us exactly what BENCH-450's loop needs: an in-process,
+Pydantic AI already gives us exactly what this loop needs: an in-process,
 stable, well-controlled multi-round tool-call agent with native MCP and
 multi-provider support. opencode is an excellent *coding agent* but is mismatched
 to an embedded, read-only, workspace-less SRE investigation loop, and its Python

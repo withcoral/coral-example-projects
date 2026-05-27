@@ -1,4 +1,4 @@
-# Spike: Claude Agent SDK as an alternative agent backend (BENCH-451)
+# Spike: Claude Agent SDK as an alternative agent backend
 
 Research spike. Evaluates Anthropic's **Claude Agent SDK** (formerly the Claude
 Code SDK) as an alternative backend for the SRE Agent's investigation loop,
