@@ -171,13 +171,17 @@ def run_streamed_investigation(
                 )
                 if not call_id or call_id not in task_titles:
                     continue
-                # RetryPromptPart = the model is being asked to retry the
-                # tool call (validation/schema mismatch on its first try).
-                # Mark the failed attempt as error so the plan reflects
-                # which queries the agent had to correct before landing.
+                # RetryPromptPart = pydantic-ai is asking the model to retry
+                # the tool call (validation/schema mismatch on its first
+                # try). The model will then issue a fresh call with a new
+                # tool_call_id, so this attempt's id never receives a
+                # success event. Mark it `complete` with a "retried" output
+                # so (a) the task isn't left spinning forever and (b) the
+                # plan header doesn't roll up to Slack's red-triangle
+                # "error" icon. The retry note keeps the signal honest.
                 if isinstance(part, RetryPromptPart):
-                    status = "error"
-                    output = "retry requested"
+                    status = "complete"
+                    output = "retried (auto-corrected)"
                 else:
                     status = "complete"
                     output = summarize_tool_result(part)
