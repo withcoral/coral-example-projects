@@ -9,6 +9,18 @@ description = "AI SRE Slackbot example using Claude and Coral MCP"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
+keywords = ["sre", "slack", "agent", "coral", "mcp", "claude", "anthropic", "pydantic-ai", "datadog", "sentry"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Topic :: System :: Monitoring",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+]
 dependencies = [
   "mcp>=1.9.0",
   "pydantic-ai-slim[anthropic,bedrock,mcp]>=1.91.0",
@@ -16,6 +28,11 @@ dependencies = [
   "slack-bolt>=1.21.0",
   "slack-sdk>=3.33.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/withcoral/coral-example-projects"
+Repository = "https://github.com/withcoral/coral-example-projects"
+Issues = "https://github.com/withcoral/coral-example-projects/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -38,3 +55,6 @@ packages = ["src/sre_agent"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Notebooks intentionally interleave docs cells and imports, which violates
+# E402 (module-level import not at top). Skip them in the linter.
+extend-exclude = ["notebooks"]
