@@ -19,10 +19,6 @@ Built with:
 
 The bot is intentionally read-only — it queries Coral and reports back; it never pages, deploys, or mutates state.
 
-## Project tracking
-
-Roadmap and open work live in the Linear project: [Coral Example Project: SRE Agent](https://linear.app/withcoral/project/coral-example-project-sre-agent-56bb8b242282/overview).
-
 ## Quickstart
 
 ```bash
@@ -78,28 +74,14 @@ claude mcp add coral --scope project -- coral mcp-stdio
 
 Then run Claude Code from this directory and use `/mcp` to verify the Coral server is available.
 
-## Publish Privately
-
-Initialize and review locally first:
-
-```bash
-git init
-git add .
-git commit -m "Add Coral AI SRE Slackbot example"
-```
-
-Create a private GitHub repository under the `coral` owner:
-
-```bash
-REMOTE=coral/coral-example-projects VISIBILITY=private ./SRE-agent/scripts/create_private_repo.sh
-```
-
-Use `VISIBILITY=internal` instead when the GitHub organization supports internal repositories.
-
 ## Guide
 
-The publishable walkthrough is in [GUIDE.md](GUIDE.md).
+The full reproduce-from-zero walkthrough (Slack app, Coral, Anthropic/Bedrock, EKS deploy) is in [GUIDE.md](GUIDE.md).
 
 ## OSS model comparison
 
 We benchmarked the Bedrock OSS catalog (MiniMax M2.5, Qwen 3 32B / Next 80B / Coder 30B, Mistral Devstral / Magistral) against the real SRE-agent investigation flow. The writeup — methodology, per-model observations, and the recommendation behind the default — is in [docs/oss-model-comparison.md](docs/oss-model-comparison.md).
+
+## License
+
+Apache 2.0 — see the [LICENSE](../LICENSE) at the repository root.
