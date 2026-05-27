@@ -67,21 +67,21 @@ Finally, invite the bot to your alerts channel: `/invite @your-bot` in
 ## 3. Fill in `.env`
 
 ```bash
-# Model selection — defaults to bedrock:minimax.minimax-m2.5 (serverless on
-# Bedrock). Override with any pydantic-ai model string, e.g.
-# `anthropic:claude-sonnet-4-6`.
-SRE_AGENT_MODEL=bedrock:minimax.minimax-m2.5
+# Model selection — defaults to anthropic:claude-opus-4-7. Override with any
+# pydantic-ai model string, e.g. `bedrock:minimax.minimax-m2.5`.
+SRE_AGENT_MODEL=anthropic:claude-opus-4-7
+
+# Used when the model string routes through `anthropic:` (or if you set
+# ANTHROPIC_MODEL for back-compat).
+ANTHROPIC_API_KEY=sk-ant-...
 
 # Used when the model string routes through `bedrock:`. boto3 needs both env
 # vars; AWS_REGION alone is not enough. The bearer token is a long-lived
 # Bedrock API key (the `ABSK…` format), not a short-lived pre-signed URL.
+# Skip if you only use Anthropic directly.
 AWS_REGION=eu-west-1
 AWS_DEFAULT_REGION=eu-west-1
 AWS_BEARER_TOKEN_BEDROCK=bedrock-api-key-...
-
-# Used when the model string routes through `anthropic:` (or if you set
-# ANTHROPIC_MODEL for back-compat). Skip if you only use Bedrock.
-ANTHROPIC_API_KEY=sk-ant-...
 
 SLACK_BOT_TOKEN=xoxb-...          # Bot User OAuth Token
 SLACK_APP_TOKEN=xapp-...          # App-Level Token (connections:write)
@@ -100,11 +100,12 @@ DATADOG_SLACK_APP_ID=A...         # Datadog's Slack app ID (optional)
 handler — leave them blank and the bot still runs (mentions + DMs only).
 Wiring them up is covered in §10.
 
-> **Model swap.** The default is MiniMax M2.5 via Bedrock because it's
-> serverless on-demand in `eu-west-1` alongside the rest of the demo infra.
-> To use Anthropic directly instead, set `SRE_AGENT_MODEL=anthropic:claude-sonnet-4-6`
-> and provide `ANTHROPIC_API_KEY`. The agent code is model-agnostic — any
-> pydantic-ai-supported model that handles tool use will work.
+> **Model swap.** The default is Claude Opus 4.7 via the Anthropic API — fork
+> and run with just an `ANTHROPIC_API_KEY`. To route through Bedrock instead
+> (e.g. MiniMax M2.5 serverless on-demand in `eu-west-1`), set
+> `SRE_AGENT_MODEL=bedrock:minimax.minimax-m2.5` and provide the AWS Bedrock
+> env vars. The agent code is model-agnostic — any pydantic-ai-supported
+> model that handles tool use will work.
 
 ## 4. Connect Coral data sources
 
@@ -125,17 +126,17 @@ for an interactive walkthrough.
 DM the bot or `@`-mention it in a channel it's in. Only run **one** instance
 at a time — two on the same `SLACK_APP_TOKEN` double-process every event.
 
-The agent (`src/sre_agent/agent.py`) registers Coral MCP as a Pydantic AI
+The agent (`src/sre_agent/core/agent.py`) registers Coral MCP as a Pydantic AI
 toolset and returns a structured incident assessment with evidence,
 hypotheses, mitigation steps, and links back to the originating systems.
-The `#alerts` handler (`src/sre_agent/slackbot.py`) auto-investigates
+The `#alerts` handler (`src/sre_agent/slack/bot.py`) auto-investigates
 messages posted by the Datadog Slack app and replies in-thread.
 
 ### How a reply is rendered
 
 All three entry points — the `#alerts` auto-investigation, an `@`-mention in
 any channel, and a DM to the bot — flow through the same helper
-(`_run_streamed_investigation` in `slackbot.py`) and produce the same shape
+(`_run_streamed_investigation` in `slack/bot.py`) and produce the same shape
 of reply using Slack's AI-agent Block Kit streaming API.
 
 1. *Contextual quick-ack as the plan title* — a `:mag:` one-liner generated
@@ -246,7 +247,7 @@ Then DM the bot or `@`-mention it — a reply confirms the full path
 ## 10. Wire Datadog → Slack for auto-investigation
 
 Optional but recommended for the SRE demo. This enables the third entry point
-in `slackbot.py`: when the Datadog Slack app posts an alert into `#alerts`,
+in `slack/bot.py`: when the Datadog Slack app posts an alert into `#alerts`,
 the agent replies in-thread with an investigation (likely cause, blast
 radius, what changed, next checks).
 

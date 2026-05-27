@@ -154,7 +154,7 @@ def credentials_form() -> widgets.Widget:
     the next ``!coral source add`` cell inherits them)."""
     inputs: dict[str, widgets.Widget] = {
         "DD_API_KEY":   _password("API Key:", "DD_API_KEY"),
-        "DD_APP_KEY":   _password("App Key:", "DD_APP_KEY"),
+        "DD_APPLICATION_KEY":   _password("App Key:", "DD_APPLICATION_KEY"),
         "DD_SITE":      _text("Site (optional):", "DD_SITE", default="datadoghq.com"),
         "GITHUB_TOKEN": _password("Token:", "GITHUB_TOKEN", "ghp_… or github_pat_…"),
         "SENTRY_TOKEN": _password("Token:", "SENTRY_TOKEN"),
@@ -163,7 +163,7 @@ def credentials_form() -> widgets.Widget:
     }
 
     sections: list[tuple[str, list[str]]] = [
-        ("Datadog", ["DD_API_KEY", "DD_APP_KEY", "DD_SITE"]),
+        ("Datadog", ["DD_API_KEY", "DD_APPLICATION_KEY", "DD_SITE"]),
         ("GitHub",  ["GITHUB_TOKEN"]),
         ("Sentry",  ["SENTRY_TOKEN", "SENTRY_ORG"]),
         ("Slack",   ["SLACK_TOKEN"]),

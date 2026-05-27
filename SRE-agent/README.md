@@ -13,7 +13,7 @@ The same flow runs on `@`-mentions (with thread history fetched for follow-ups) 
 Built with:
 
 - Slack Bolt for Python in Socket Mode (`chat.startStream` / `appendStream` / `stopStream` for the live plan UI)
-- Pydantic AI (model selectable via `SRE_AGENT_MODEL` — default `bedrock:minimax.minimax-m2.5`, current deploy on `anthropic:claude-opus-4-7`)
+- Pydantic AI (model selectable via `SRE_AGENT_MODEL` — default `anthropic:claude-opus-4-7`)
 - Coral MCP over stdio
 - Coral sources for Datadog, Slack, GitHub, and Sentry
 
@@ -80,7 +80,7 @@ This repo ships configured for the demo `hello-service` deployed in Coral's
 internal test environment. To make it useful against your stack you need to
 edit a small number of places:
 
-- **`src/sre_agent/slackbot.py` → `INVESTIGATION_CONTEXT`** — rewrite the
+- **`src/sre_agent/slack/bot.py` → `INVESTIGATION_CONTEXT`** — rewrite the
   whole string to describe your service: Datadog metric/monitor names, the
   Sentry org+project slug, the GitHub repo+path, and the URL templates the
   agent cites as sources. This is what tells the agent where to look.

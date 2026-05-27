@@ -2,8 +2,7 @@
 
 Pure functions only: take text or data, return Slack block dicts or
 formatted strings. No I/O, no Slack API calls. Reusable across the
-streaming pipeline (`slack_streaming.py`) and the bot entry points
-(`slackbot.py`).
+streaming pipeline (`streaming.py`) and the bot entry points (`bot.py`).
 """
 from __future__ import annotations
 

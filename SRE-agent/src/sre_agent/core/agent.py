@@ -12,11 +12,11 @@ from pydantic_ai.usage import UsageLimits
 
 from sre_agent.core.coral_mcp import CoralMcpClient, load_coral_env
 
-# Default model is MiniMax M2.5 routed through Bedrock — serverless on-demand,
-# available in eu-west-1 alongside the rest of the demo infra. Override via the
-# SRE_AGENT_MODEL env var (any pydantic-ai model string, e.g.
-# `anthropic:claude-sonnet-4-6` or `bedrock:anthropic.claude-3-5-sonnet-20241022-v2:0`).
-DEFAULT_MODEL = "bedrock:minimax.minimax-m2.5"
+# Default model is Claude Opus 4.7 via the Anthropic API — works with just an
+# ANTHROPIC_API_KEY. Override via the SRE_AGENT_MODEL env var (any pydantic-ai
+# model string, e.g. `bedrock:minimax.minimax-m2.5` or
+# `bedrock:anthropic.claude-3-5-sonnet-20241022-v2:0`).
+DEFAULT_MODEL = "anthropic:claude-opus-4-7"
 # Bedrock OSS models have varying max-output ceilings (Qwen 3 32B is hard
 # capped at 32k, for example). The real structured assessment lands in
 # roughly 2k–4k tokens, but reasoning-style models (MiniMax, Magistral)
