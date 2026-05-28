@@ -1,12 +1,20 @@
 # Coral Example Projects
 
-Example projects for building production-style agents on Coral.
+Reference implementations for building production-style AI agents on top of
+[Coral](https://withcoral.com) — a unified MCP layer over the observability,
+incident, code, and chat tools that real engineering teams already use.
+
+These are full, runnable projects, not toy snippets. Fork them, point them at
+your own Coral instance and data sources, and adapt from there.
 
 ## Projects
 
-- [SRE-agent](SRE-agent/README.md): AI SRE Slackbot that uses Claude plus Coral MCP to investigate Datadog, Slack, GitHub, and Sentry.
+- **[SRE-agent](SRE-agent/README.md)** — Slack bot that auto-investigates
+  Datadog alerts end-to-end. Streams a live Block Kit "plan" of every Coral
+  MCP tool call it makes, then posts a structured incident assessment with
+  evidence pulled from Datadog, Sentry, and GitHub. Pydantic AI + Slack Bolt
+  Socket Mode + Coral MCP over stdio. Deploys as a single-replica container.
 
-## Repository Visibility
+## License
 
-This repository is intended for the Coral team and customers under a private or internal GitHub repository. Do not publish it publicly while it contains customer-specific setup notes, screenshots, or recorded demos.
-
+Apache 2.0 — see [LICENSE](LICENSE).

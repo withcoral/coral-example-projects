@@ -1,0 +1,11 @@
+[project]
+name = "hello-service"
+version = "0.1.0"
+description = "Deliberately buggy FastAPI demo for the SRE agent investigation flow."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sentry-sdk[fastapi]>=2.18",
+    "httpx>=0.27",
+]

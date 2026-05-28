@@ -1,0 +1,84 @@
+# Deployment + Service for the demo hello-service FastAPI app.
+# This app is intentionally buggy — see demo-app/main.py — so the SRE agent has
+# something real to investigate when its monitor fires.
+#
+# Secrets are pulled from `hello-service-secrets` (created out-of-band, like
+# `sre-agent-secrets`).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-service
+  namespace: coral-demos
+  labels:
+    app.kubernetes.io/name: hello-service
+    app.kubernetes.io/part-of: coral-demos
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hello-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hello-service
+        app.kubernetes.io/part-of: coral-demos
+    spec:
+      containers:
+        - name: hello-service
+          # Replace with your own image reference before applying. Build from
+          # `demo-app/` and push to whichever registry your cluster pulls
+          # from. Build for `linux/amd64` to match cluster node arch.
+          # For repeatable rollouts, pin by digest (`@sha256:...`) and switch
+          # imagePullPolicy back to IfNotPresent.
+          image: <YOUR_REGISTRY>/hello-service:latest
+          imagePullPolicy: Always
+          env:
+            - name: SERVICE_NAME
+              value: hello-service
+            - name: APP_ENV
+              value: production
+          envFrom:
+            - secretRef:
+                name: hello-service-secrets
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-service
+  namespace: coral-demos
+  labels:
+    app.kubernetes.io/name: hello-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hello-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000

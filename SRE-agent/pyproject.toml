@@ -7,14 +7,32 @@ name = "coral-sre-agent"
 version = "0.1.0"
 description = "AI SRE Slackbot example using Claude and Coral MCP"
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.11"
+keywords = ["sre", "slack", "agent", "coral", "mcp", "claude", "anthropic", "pydantic-ai", "datadog", "sentry"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Topic :: System :: Monitoring",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+]
 dependencies = [
   "mcp>=1.9.0",
-  "pydantic-ai-slim[anthropic,mcp]>=1.91.0",
+  "pydantic-ai-slim[anthropic,bedrock,mcp,openai]>=1.91.0",
   "python-dotenv>=1.0.1",
   "slack-bolt>=1.21.0",
   "slack-sdk>=3.33.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/withcoral/coral-example-projects"
+Repository = "https://github.com/withcoral/coral-example-projects"
+Issues = "https://github.com/withcoral/coral-example-projects/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -23,12 +41,13 @@ dev = [
 ]
 notebook = [
   "ipykernel>=6.29.0",
+  "ipywidgets>=8.1.0",
   "jupyterlab>=4.2.0",
 ]
 
 [project.scripts]
-coral-sre-agent = "sre_agent.cli:main"
-coral-sre-slackbot = "sre_agent.slackbot:main"
+coral-sre-agent = "sre_agent.local.cli:main"
+coral-sre-slackbot = "sre_agent.slack.bot:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sre_agent"]
@@ -36,3 +55,6 @@ packages = ["src/sre_agent"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Notebooks intentionally interleave docs cells and imports, which violates
+# E402 (module-level import not at top). Skip them in the linter.
+extend-exclude = ["notebooks"]

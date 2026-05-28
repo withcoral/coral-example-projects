@@ -17,7 +17,7 @@ def main() -> None:
                     "CORAL_BIN": "${CORAL_BIN:-coral}",
                     "SLACK_TOKEN": "${SLACK_TOKEN}",
                     "DD_API_KEY": "${DD_API_KEY}",
-                    "DD_APP_KEY": "${DD_APP_KEY}",
+                    "DD_APPLICATION_KEY": "${DD_APPLICATION_KEY}",
                     "DD_SITE": "${DD_SITE:-datadoghq.com}",
                     "GITHUB_TOKEN": "${GITHUB_TOKEN}",
                     "SENTRY_TOKEN": "${SENTRY_TOKEN}",
