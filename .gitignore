@@ -1,5 +1,8 @@
 .DS_Store
+# Catch .env, .env.local, .env.production, etc. — keep .env.example tracked.
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.py[cod]

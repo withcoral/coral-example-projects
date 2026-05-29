@@ -202,7 +202,15 @@ def build_app() -> App:
         # replies need an @-mention to trigger the bot.
         if not alerts_channel_id or not datadog_app_id:
             return
-        if event.get("subtype") or event.get("channel") != alerts_channel_id:
+        # Slack integration posts arrive either as a normal message (no
+        # subtype, just `bot_id`/`app_id` set when the app posts via
+        # chat.postMessage with an OAuth token) OR with `subtype:
+        # "bot_message"` (the older incoming-webhook shape some apps still
+        # use). Reject everything else (channel_join, message_changed,
+        # message_deleted, …) so we don't react to chrome events.
+        if event.get("subtype") not in (None, "bot_message"):
+            return
+        if event.get("channel") != alerts_channel_id:
             return
         if datadog_app_id not in (event.get("app_id"), event.get("bot_id")):
             return
