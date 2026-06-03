@@ -1,5 +1,7 @@
 # AI SRE Agent with Claude and Coral
 
+Follow along with the [blog post](https://withcoral.com/blog/building-an-ai-sre-agent-with-coral).
+
 A read-only SRE agent that investigates production incidents end-to-end using
 **Coral MCP** for evidence (Datadog, Sentry, GitHub, Slack), **Pydantic AI**
 for orchestration, and any tool-using LLM (Claude, MiniMax, DeepSeek, Qwen…)
