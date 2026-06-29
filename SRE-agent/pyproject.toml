@@ -22,11 +22,11 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 dependencies = [
-  "mcp>=1.9.0",
-  "pydantic-ai-slim[anthropic,bedrock,mcp,openai]>=1.99.0,<2.0.0",
+  "mcp>=1.28.1",
+  "pydantic-ai-slim[anthropic,bedrock,mcp,openai]>=2.1.0,<3.0.0",
   "python-dotenv>=1.0.1",
   "slack-bolt>=1.21.0",
-  "slack-sdk>=3.33.0",
+  "slack-sdk>=3.42.0",
 ]
 
 [project.urls]
@@ -36,11 +36,11 @@ Issues = "https://github.com/withcoral/coral-example-projects/issues"
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.3.0",
-  "ruff>=0.6.0",
+  "pytest>=9.1.1",
+  "ruff>=0.15.20",
 ]
 notebook = [
-  "ipykernel>=6.29.0",
+  "ipykernel>=7.3.0",
   "ipywidgets>=8.1.0",
   "jupyterlab>=4.2.0",
 ]
