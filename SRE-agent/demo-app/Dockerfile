@@ -1,7 +1,7 @@
 # Hello-service: small FastAPI app with a deliberate bug, instrumented with
 # Sentry. Build for the cluster's CPU arch — same as the agent image:
 #   docker build --platform linux/amd64 -t hello-service:<sha> .
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
