@@ -1,0 +1,47 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/SRE-agent"
+    schedule:
+      interval: "daily"
+      time: "08:00"
+      timezone: "Europe/London"
+    groups:
+      sre-agent-python:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/SRE-agent/demo-app"
+    schedule:
+      interval: "daily"
+      time: "08:15"
+      timezone: "Europe/London"
+    groups:
+      demo-app-python:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/SRE-agent"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:30"
+      timezone: "Europe/London"
+
+  - package-ecosystem: "docker"
+    directory: "/SRE-agent/demo-app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:45"
+      timezone: "Europe/London"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/London"

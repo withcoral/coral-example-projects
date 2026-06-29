@@ -23,7 +23,7 @@ classifiers = [
 ]
 dependencies = [
   "mcp>=1.9.0",
-  "pydantic-ai-slim[anthropic,bedrock,mcp,openai]>=1.91.0",
+  "pydantic-ai-slim[anthropic,bedrock,mcp,openai]>=1.99.0,<2.0.0",
   "python-dotenv>=1.0.1",
   "slack-bolt>=1.21.0",
   "slack-sdk>=3.33.0",
